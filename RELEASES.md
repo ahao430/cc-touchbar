@@ -2,6 +2,25 @@
 
 版本说明。tag 触发 GitHub Actions 自动构建未签名 zip 并发布到 GitHub Releases。
 
+## 0.0.6
+
+升级检测 + GitHub 入口 + 菜单栏。
+
+### 功能
+
+- **检查更新**：调用 GitHub Releases API 拉最新 tag，与 bundle 内 `CFBundleShortVersionString` 语义化版本比较；有新版本时弹窗提示，点「前往下载」打开 `releases/latest`。
+- **关于我们**：macOS 菜单栏 cc-touchbar 菜单新增「关于 cc-touchbar」，弹窗展示版本号与仓库地址，附「前往 GitHub」按钮。
+- **检查更新菜单**：菜单栏新增「检查更新…」，触发 UpdateChecker。
+- **GitHub 入口**：主窗口 header 新增 `</>` GitHub 按钮，点击打开 `github.com/ahao430/cc-touchbar`。
+- **菜单栏补齐**：之前 app 没有主菜单（`NSApp.mainMenu` 为空），本次顺手补齐 app 菜单（关于 / 检查更新 / 隐藏 / 隐藏其他 / 退出 ⌘Q）。
+
+### 设计变更
+
+- 新增 `Sources/App/UpdateChecker.swift`：纯 enum 命名空间，封装 GitHub API 调用 + 语义化版本比较（split by `.`，逐段比），URL 为 `https://api.github.com/repos/ahao430/cc-touchbar/releases/latest`
+- `UpdateCheckResult` 三态：`.upToDate` / `.newVersionAvailable(current:latest:url:)` / `.error`
+- AppDelegate 在 `applicationDidFinishLaunching` 末尾调用 `setupMainMenu()`，构建 app 菜单到 `NSApp.mainMenu`
+- GitHub 按钮用 SF Symbol `chevron.left.forwardslash.chevron.right`（`</>`）+ 文本「GitHub」，符合 dev tool 语义
+
 ## 0.0.5
 
 点击切换宽度 + DeepSeek 模型名修复 + git 分支检测增强。

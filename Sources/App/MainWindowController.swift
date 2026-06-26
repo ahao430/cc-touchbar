@@ -121,6 +121,20 @@ final class MainWindowController: NSWindowController {
         headerView.addArrangedSubview(provider)
         headerView.addArrangedSubview(model)
         headerView.addArrangedSubview(source)
+        headerView.addArrangedSubview(makeGitHubButton())
+    }
+
+    private func makeGitHubButton() -> NSButton {
+        let button = NSButton(title: "GitHub", target: self, action: #selector(openGitHub))
+        button.bezelStyle = .rounded
+        button.image = NSImage(systemSymbolName: "chevron.left.forwardslash.chevron.right",
+                               accessibilityDescription: "GitHub")
+        button.imagePosition = .imageLeft
+        return button
+    }
+
+    @objc private func openGitHub() {
+        NSWorkspace.shared.open(UpdateChecker.repositoryURL)
     }
 
     private func rebuildFooter() {

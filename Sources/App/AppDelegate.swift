@@ -121,7 +121,82 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
 
         // 启动时打开主窗口
+        setupMainMenu()
         showMainWindow()
+    }
+
+    // MARK: - Main menu
+
+    private func setupMainMenu() {
+        let mainMenu = NSMenu()
+
+        let appMenuItem = NSMenuItem()
+        appMenuItem.title = "cc-touchbar"
+        let appMenu = NSMenu()
+        appMenu.addItem(withTitle: "关于 cc-touchbar", action: #selector(showAbout), keyEquivalent: "")
+        appMenu.addItem(withTitle: "检查更新…", action: #selector(checkForUpdates), keyEquivalent: "")
+        appMenu.addItem(.separator())
+        let hideItem = appMenu.addItem(withTitle: "隐藏 cc-touchbar", action: #selector(NSApp.hide(_:)), keyEquivalent: "h")
+        hideItem.target = NSApp
+        appMenu.addItem(withTitle: "隐藏其他", action: #selector(NSApp.hideOtherApplications(_:)), keyEquivalent: "h")
+        appMenu.addItem(.separator())
+        let quitItem = appMenu.addItem(withTitle: "退出 cc-touchbar", action: #selector(NSApp.terminate(_:)), keyEquivalent: "q")
+        quitItem.target = NSApp
+        appMenuItem.submenu = appMenu
+        mainMenu.addItem(appMenuItem)
+
+        NSApp.mainMenu = mainMenu
+    }
+
+    @objc private func showAbout() {
+        let alert = NSAlert()
+        alert.messageText = "cc-touchbar"
+        alert.informativeText = """
+            版本 \(UpdateChecker.currentVersion)
+
+            Touch Bar 实时显示 Claude Code 会话状态、上下文用量、渠道与余额。
+
+            GitHub: github.com/ahao430/cc-touchbar
+            """
+        alert.alertStyle = .informational
+        alert.icon = NSApp.applicationIconImage
+        alert.addButton(withTitle: "关闭")
+        alert.addButton(withTitle: "前往 GitHub")
+        if alert.runModal() == .alertSecondButtonReturn {
+            NSWorkspace.shared.open(UpdateChecker.repositoryURL)
+        }
+    }
+
+    @objc private func checkForUpdates() {
+        UpdateChecker.check { [weak self] result in
+            self?.presentUpdateResult(result)
+        }
+    }
+
+    private func presentUpdateResult(_ result: UpdateCheckResult) {
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        switch result {
+        case .upToDate(let current):
+            alert.messageText = "已是最新版本"
+            alert.informativeText = "当前版本 \(current)"
+            alert.addButton(withTitle: "关闭")
+        case .newVersionAvailable(let current, let latest, let url):
+            alert.messageText = "发现新版本 \(latest)"
+            alert.informativeText = "当前版本 \(current)，新版本 \(latest) 已发布。\n是否立即前往下载？"
+            alert.addButton(withTitle: "前往下载")
+            alert.addButton(withTitle: "稍后")
+            if alert.runModal() == .alertFirstButtonReturn {
+                NSWorkspace.shared.open(url)
+            }
+            return
+        case .error(let msg):
+            alert.messageText = "检查更新失败"
+            alert.informativeText = msg
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "关闭")
+        }
+        alert.runModal()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
