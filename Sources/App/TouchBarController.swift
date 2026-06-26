@@ -16,6 +16,7 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
     private var contextLabel: NSTextField?
     private var costLabel: NSTextField?
     private var thinkingLabel: NSTextField?
+    private var gitBranchLabel: NSTextField?
     private var itemViews: [NSView] = []
     private var iconButtons: [NSButton] = []
     private var separatorViews: [NSView] = []
@@ -76,6 +77,7 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
         Observation.withObservationTracking {
             _ = state.providerName
             _ = state.defaultModel
+            _ = state.contextModelName
             _ = state.activeSource
             _ = state.channelBalanceText
             _ = state.contextUsedTokens
@@ -83,6 +85,7 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
             _ = state.sessionBilledTokens
             _ = state.cacheHitRate
             _ = state.thinkingBudgetTokens
+            _ = state.gitBranch
             _ = sessions.focusedAppPID
             _ = sessions.lastHookActiveSessionID
         } onChange: { [weak self] in
@@ -97,8 +100,8 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
         let bar = NSTouchBar()
         bar.delegate = self
         bar.defaultItemIdentifiers = identifiers()
-        bar.customizationIdentifier = "cc-touchbar.main.v3"
-        bar.customizationAllowedItemIdentifiers = identifiers()
+        bar.customizationIdentifier = nil
+        bar.customizationAllowedItemIdentifiers = []
         self.touchBar = bar
         return bar
     }
@@ -109,7 +112,7 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
             refreshProviderTitle()
         }
         providerButton?.toolTip = state?.providerName ?? "—"
-        modelLabel?.stringValue = state?.defaultModel ?? "—"
+        modelLabel?.stringValue = state?.contextModelName ?? state?.defaultModel ?? "—"
         balanceLabel?.stringValue = balanceText
         contextLabel?.stringValue = contextText
         contextLabel?.toolTip = contextTooltip
@@ -117,10 +120,12 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
         costLabel?.toolTip = costTooltip
         thinkingLabel?.stringValue = thinkingText
         thinkingLabel?.toolTip = thinkingTooltip
+        gitBranchLabel?.stringValue = gitBranchText
+        gitBranchLabel?.toolTip = gitBranchTooltip
     }
 
     private func identifiers() -> [NSTouchBarItem.Identifier] {
-        return [.provider, .model, .sep1, .balance, .sep2, .context, .cost, .thinking, .sep3, .openApp, .openCCSwitch, .collapse]
+        return [.provider, .model, .sep1, .balance, .sep2, .context, .cost, .thinking, .sep3, .gitBranch, .openApp, .openCCSwitch, .collapse]
     }
 
     func touchBar(_ touchBar: NSTouchBar, makeItemForIdentifier id: NSTouchBarItem.Identifier) -> NSTouchBarItem? {
@@ -132,7 +137,7 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
             button.cell?.truncatesLastVisibleLine = true
             button.cell?.wraps = false
             button.translatesAutoresizingMaskIntoConstraints = false
-            button.widthAnchor.constraint(lessThanOrEqualToConstant: 130).isActive = true
+            button.widthAnchor.constraint(lessThanOrEqualToConstant: 110).isActive = true
             button.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
             button.setContentHuggingPriority(.required, for: .horizontal)
             button.toolTip = state?.providerName ?? "—"
@@ -144,9 +149,17 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
 
         case .model:
             let item = NSCustomTouchBarItem(identifier: id)
-            let label = NSTextField(labelWithString: state?.defaultModel ?? "—")
+            let label = NSTextField(labelWithString: state?.contextModelName ?? state?.defaultModel ?? "—")
             label.alignment = .center
             label.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+            label.lineBreakMode = .byTruncatingTail
+            label.cell?.wraps = false
+            label.cell?.truncatesLastVisibleLine = true
+            label.translatesAutoresizingMaskIntoConstraints = false
+            label.widthAnchor.constraint(lessThanOrEqualToConstant: 100).isActive = true
+            label.widthAnchor.constraint(greaterThanOrEqualToConstant: 24).isActive = true
+            label.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+            label.setContentHuggingPriority(.defaultHigh, for: .horizontal)
             self.modelLabel = label
             item.view = label
             registerItem(view: label)
@@ -236,6 +249,25 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
             line.heightAnchor.constraint(equalToConstant: 22).isActive = true
             item.view = line
             separatorViews.append(line)
+            return item
+
+        case .gitBranch:
+            let item = NSCustomTouchBarItem(identifier: id)
+            let label = NSTextField(labelWithString: gitBranchText)
+            label.alignment = .center
+            label.font = .monospacedSystemFont(ofSize: 10, weight: .regular)
+            label.toolTip = gitBranchTooltip
+            label.lineBreakMode = .byTruncatingTail
+            label.cell?.wraps = false
+            label.cell?.truncatesLastVisibleLine = true
+            label.translatesAutoresizingMaskIntoConstraints = false
+            label.widthAnchor.constraint(lessThanOrEqualToConstant: 80).isActive = true
+            label.widthAnchor.constraint(greaterThanOrEqualToConstant: 30).isActive = true
+            label.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+            label.setContentHuggingPriority(.defaultHigh, for: .horizontal)
+            self.gitBranchLabel = label
+            item.view = label
+            registerItem(view: label)
             return item
 
         default:
@@ -396,6 +428,20 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
         return "MAX_THINKING_TOKENS = \(budget)\n档位：\(tier)"
     }
 
+    private var gitBranchText: String {
+        guard let branch = state?.gitBranch, !branch.isEmpty else {
+            return "⎇ —"
+        }
+        return "⎇ \(branch)"
+    }
+
+    private var gitBranchTooltip: String {
+        guard let branch = state?.gitBranch, !branch.isEmpty else {
+            return "当前目录无 git 仓库"
+        }
+        return "git: \(branch)"
+    }
+
     private func formatTokens(_ n: Int) -> String {
         if n >= 1_000_000 {
             let v = Double(n) / 1_000_000
@@ -467,6 +513,7 @@ extension NSTouchBarItem.Identifier {
     static let cost         = NSTouchBarItem.Identifier("cc-touchbar.cost")
     static let thinking     = NSTouchBarItem.Identifier("cc-touchbar.thinking")
     static let sep3         = NSTouchBarItem.Identifier("cc-touchbar.sep3")
+    static let gitBranch    = NSTouchBarItem.Identifier("cc-touchbar.gitBranch")
     static let openApp      = NSTouchBarItem.Identifier("cc-touchbar.openApp")
     static let openCCSwitch = NSTouchBarItem.Identifier("cc-touchbar.openCCSwitch")
     static let collapse     = NSTouchBarItem.Identifier("cc-touchbar.collapse")

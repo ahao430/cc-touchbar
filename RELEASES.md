@@ -2,6 +2,18 @@
 
 版本说明。tag 触发 GitHub Actions 自动构建未签名 zip 并发布到 GitHub Releases。
 
+## 0.0.4
+
+Git 分支显示 + 模型名修复 + 布局压缩。
+
+### 功能
+
+- **Git 分支**：HUD 新增 `⎇ main` 字段，显示 focused session 的 git 分支。每 1.5s 自动刷新，切分支后立即更新。
+- **模型名修复**：transcript 里的实际模型名优先于 settings.json 的 ANTHROPIC_MODEL，解决深源等供应商不设 ANTHROPIC_MODEL 时模型名缺失问题。切供应商时自动清空旧模型缓存。
+- **布局压缩**：模型名上限 100pt、分支名上限 80pt、供应商上限 110pt，长名截断尾部。避免右边按钮被挤出屏外。
+- **按钮收紧**：图标按钮 30→28pt。
+- **customizationIdentifier 移除**：避免 macOS 缓存旧版 Touch Bar 布局导致新增项不显示。
+
 ## 0.0.3
 
 Intel 支持：分别构建 arm64 / x86_64 两个 zip，都发到 release assets。修复 CI 权限问题。

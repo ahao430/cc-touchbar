@@ -28,6 +28,8 @@ final class AppState {
     /// 最近一条 assistant message 的 cache 命中率（0~1）
     var cacheHitRate: Double?
 
+    var gitBranch: String?
+
     var thinkingBudgetTokens: Int?
 
     var touchBarSupported: Bool = false
@@ -190,9 +192,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 ccSwitchDBPresent: bridge.isAvailable,
                 ccSwitchActiveName: bridge.activeProvider?.name
             )
+            let providerChanged = state.providerName != resolved.providerName
             state.activeSource = resolved.source
             state.providerName = resolved.providerName
             state.defaultModel = resolved.defaultModel
+            if providerChanged { state.contextModelName = nil }
 
             if let raw = settings.env?.maxThinkingTokens,
                let v = Int(raw), v > 0 {

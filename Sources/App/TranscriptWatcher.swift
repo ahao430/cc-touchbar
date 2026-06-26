@@ -14,7 +14,10 @@ final class TranscriptWatcher {
         self.state = state
         observeFocus()
         timer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.refresh() }
+            Task { @MainActor in
+                self?.refresh()
+                self?.detectGitBranch()
+            }
         }
     }
 
@@ -26,8 +29,34 @@ final class TranscriptWatcher {
         } onChange: { [weak self] in
             Task { @MainActor in
                 self?.refresh()
+                self?.detectGitBranch()
                 self?.observeFocus()
             }
+        }
+    }
+
+    private func detectGitBranch() {
+        guard let state else { return }
+        guard let cwd = store?.focusedSession?.cwd.path else {
+            state.gitBranch = nil
+            return
+        }
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        task.arguments = ["-C", cwd, "branch", "--show-current"]
+        task.qualityOfService = .utility
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = FileHandle.nullDevice
+        do {
+            try task.run()
+            task.waitUntilExit()
+            let data = try pipe.fileHandleForReading.readToEnd() ?? Data()
+            let branch = String(data: data, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            state.gitBranch = (branch?.isEmpty == false) ? branch : nil
+        } catch {
+            state.gitBranch = nil
         }
     }
 
@@ -104,6 +133,7 @@ final class TranscriptWatcher {
         state?.sessionBilledTokens = nil
         state?.sessionAssistantTurns = nil
         state?.cacheHitRate = nil
+        state?.gitBranch = nil
     }
 
     private struct Usage {
