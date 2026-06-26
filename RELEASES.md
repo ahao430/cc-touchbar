@@ -2,6 +2,31 @@
 
 版本说明。tag 触发 GitHub Actions 自动构建未签名 zip 并发布到 GitHub Releases。
 
+## 0.0.2
+
+HUD 信息密度扩展：上下文用量 / 累计 token / cache 命中率 / thinking 预算。
+
+### 功能
+
+- **Touch Bar 上下文用量**：解析当前 focused session 的 transcript JSONL，取最近一条 assistant message 的 `usage`，显示 `ctx 78%`（接近 80% 标 ⚠︎，95% 标 ‼︎）。tooltip 显示绝对值与模型。模型上限按名字推断（`1m` / `gemini` → 1M；默认 200k）。
+- **累计 billed tokens**：账单口径 `input + creation×1.25 + read×0.1 + output` 累加整个 session，显示 `Σ 1.2M ⚡92%`。tooltip 显示轮数与详细公式。
+- **Cache 命中率**：最近一轮 `cache_read / (input + cache_read + cache_creation)`，拼在 `Σ` 字段尾部，闪电符号区分。
+- **Thinking 预算**：读 `~/.claude/settings.json` 的 `MAX_THINKING_TOKENS`，显示 `💭 32k`，tooltip 标注档位（think / megathink / think harder / ultrathink）。未设置则该字段空白。
+- **分隔线**：在 `[provider·model] │ [balance] │ [ctx·Σ·thinking] │ [buttons]` 之间画 1.5pt 竖线，颜色跟随主题。
+- **按钮收紧**：app / cc switch / collapse 三按钮统一 `.inline` bezel + 30pt 宽度约束，图标保持 18×18，避免 cc switch 按钮被挤出屏外。
+- **供应商按钮宽度上限**：130pt + 尾部截断 + tooltip 显示完整名。
+
+### 设计变更
+
+- 数据通路复用 `SessionStore.focusedSession.transcriptPath`；新增 `TranscriptWatcher` 1.5s tail transcript JSONL
+- 上下文上限按模型名启发式推断；后续如需更精确的映射集中在 `TranscriptWatcher.contextLimit(for:)`
+- Cache 命中率选「最近一轮」而非累计：用户能看到 cache 冷启动 / 中断时的瞬时变化
+
+### 限制
+
+- `MAX_THINKING_TOKENS` 字段未设置时 thinking 字段是空字符串（NSTextField 仍占微小宽度）；彻底隐藏需要按 state 重建 NSTouchBar
+- `/fast` 是 Claude Code 运行时 toggle，不落盘 settings.json，无法读到 Touch Bar
+
 ## 0.0.1
 
 首次可用版本。Touch Bar HUD + 三层数据源 + Hook 接入 + DFR 常驻。

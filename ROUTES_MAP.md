@@ -45,14 +45,21 @@
 | **DFR（系统模态 Touch Bar + Control Strip tray）** | ✅ | 决策变更：从 v3 后期提前到 v2 末期，因为没有它切到其它 app HUD 就消失了 |
 | **openCCS**：唤起 cc switch GUI | ✅ | |
 | **余额显示**：周期 + 百分比 + 刷新剩余时间 | ✅ | Zhipu 专属，通过 `/api/monitor/usage/quota/limit` |
+| **HUD：上下文用量** | ✅ | 0.0.2：`TranscriptWatcher` tail transcript，`ctx 78%` |
+| **HUD：累计 billed tokens** | ✅ | 0.0.2：账单口径累加，`Σ 1.2M ⚡92%` |
+| **HUD：cache 命中率** | ✅ | 0.0.2：最近一轮 `cache_read / total_input` |
+| **HUD：thinking 预算** | ✅ | 0.0.2：从 env `MAX_THINKING_TOKENS` 读，未设置则空白 |
+| **HUD：分隔线 / 按钮收紧 / 供应商宽度** | ✅ | 0.0.2：1.5pt 竖线 + inline bezel + 130pt 上限 |
 | **provider popover + 健康状态**（Touch Bar + 主窗口） | 🔲 | |
 | **直写 SQLite 切 provider** | 🔲 | 需先逆向 cc-switch reload 机制 |
 | **完整跨终端激活**：Ghostty / WezTerm / VS Code URL scheme | 🔲 | 当前用 PID fallback |
 | **远程 session 检测**（CC 在 SSH 远端） | 🔲 | |
 | **多 app_type**：codex / gemini | 🔲 | |
 | **使用分析图表**（按 provider / 模型拆分） | 🔲 | |
-| **post-MVP hook 利用**：`PostToolUse` token、`PostToolBatch` | 🔲 | |
+| **post-MVP hook 利用**：`PostToolUse` token、`PostToolBatch` | 🟡 | 0.0.2：transcript JSONL 已解析（usage / cache）；PostToolUse payload 本身的 token 字段未用 |
 | **cc switch deeplink**：`openUI(toProvider:)` | 🔲 | 需先确认 Tauri 是否暴露 |
+| **HUD：活跃 session 计数 / cwd 字段** | 🔲 | 数据现成，加 item 即可（ROUTES 待定） |
+| **HUD：估算 USD 花费** | 🔲 | 需维护各家供应商价格表 |
 
 ## 主题系统 🟡
 
@@ -148,7 +155,7 @@ v3（提前 / 进行中）─────
 
 | 版本 | 范围 | 状态 |
 |---|---|---|
-| `0.0.x` | v1 + v2 + v3 部分（DFR / 余额 / 路径覆盖 / 主题切换） | 当前 |
+| `0.0.x` | v1 + v2 + v3 部分（DFR / 余额 / 路径覆盖 / 主题切换 / HUD 用量信息） | 当前 |
 | `0.1.x` | v3 收尾：provider popover + 健康状态 + 跨终端完整激活 | 计划中 |
 | `0.2.x` | 主题系统完整化（自定义 + 导入导出 + 剩余 3 套预设） | 计划中 |
 | `0.3.x` | 直写 SQLite 切 provider（依赖 cc-switch reload 逆向） | 计划中 |

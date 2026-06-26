@@ -21,6 +21,8 @@ struct Theme {
     let itemBackground: NSColor?
     /// 强调色（图标按钮的 tint）
     let accent: NSColor
+    /// 分隔线颜色
+    let separatorColor: NSColor
 
     static let dark = Theme(
         name: "Dark",
@@ -30,7 +32,8 @@ struct Theme {
         providerBezel: NSColor.systemBlue.withAlphaComponent(0.35),
         providerText: .white,
         itemBackground: nil,
-        accent: NSColor.systemBlue
+        accent: NSColor.systemBlue,
+        separatorColor: NSColor.white.withAlphaComponent(0.45)
     )
 
     static let light = Theme(
@@ -41,7 +44,8 @@ struct Theme {
         providerBezel: NSColor.systemBlue.withAlphaComponent(0.85),
         providerText: .white,
         itemBackground: NSColor(white: 0.92, alpha: 1.0),
-        accent: NSColor.systemBlue
+        accent: NSColor.systemBlue,
+        separatorColor: NSColor(white: 0.0, alpha: 0.35)
     )
 
     static var all: [Theme] { [dark, light] }

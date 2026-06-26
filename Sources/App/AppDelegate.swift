@@ -17,6 +17,19 @@ final class AppState {
 
     var channelBalanceText: String = "余额 —"
 
+    var contextUsedTokens: Int?
+    var contextLimitTokens: Int?
+    var contextModelName: String?
+
+    /// 当前 session 累计 billed tokens（账单口径）
+    var sessionBilledTokens: Int?
+    /// 当前 session assistant message 数
+    var sessionAssistantTurns: Int?
+    /// 最近一条 assistant message 的 cache 命中率（0~1）
+    var cacheHitRate: Double?
+
+    var thinkingBudgetTokens: Int?
+
     var touchBarSupported: Bool = false
     var bootDiagnostics: [String] = []
 }
@@ -37,6 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var touchBarController: TouchBarController?
     private var mainWindowController: MainWindowController?
     private var ingester: HookIngester?
+    private var transcriptWatcher: TranscriptWatcher?
     private var poller = Poller()
     private var balanceRefreshTimer: Timer?
 
@@ -53,6 +67,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let ing = HookIngester()
         ing.attach(to: sessions)
         ingester = ing
+
+        // 1.5 启动 transcript watcher（解析上下文用量）
+        let tw = TranscriptWatcher()
+        tw.attach(to: sessions, state: state)
+        transcriptWatcher = tw
 
         // 2. 启动 settings.json 监听
         startSettingsPoller()
@@ -174,6 +193,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             state.activeSource = resolved.source
             state.providerName = resolved.providerName
             state.defaultModel = resolved.defaultModel
+
+            if let raw = settings.env?.maxThinkingTokens,
+               let v = Int(raw), v > 0 {
+                state.thinkingBudgetTokens = v
+            } else {
+                state.thinkingBudgetTokens = nil
+            }
         }
         state.channelBalanceText = bridge.balanceText
     }

@@ -13,6 +13,9 @@ struct ParsedSettings {
         let haikuModel: String?
         let sonnetModel: String?
         let opusModel: String?
+        let maxThinkingTokens: String?
+        let maxOutputTokens: String?
+        let disableInterleavedThinking: Bool
     }
 }
 
@@ -37,7 +40,10 @@ enum SettingsJsonReader {
             anthropicModel: envDict["ANTHROPIC_MODEL"],
             haikuModel: envDict["ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME"] ?? envDict["ANTHROPIC_DEFAULT_HAIKU_MODEL"],
             sonnetModel: envDict["ANTHROPIC_DEFAULT_SONNET_MODEL_NAME"] ?? envDict["ANTHROPIC_DEFAULT_SONNET_MODEL"],
-            opusModel: envDict["ANTHROPIC_DEFAULT_OPUS_MODEL_NAME"] ?? envDict["ANTHROPIC_DEFAULT_OPUS_MODEL"]
+            opusModel: envDict["ANTHROPIC_DEFAULT_OPUS_MODEL_NAME"] ?? envDict["ANTHROPIC_DEFAULT_OPUS_MODEL"],
+            maxThinkingTokens: envDict["MAX_THINKING_TOKENS"],
+            maxOutputTokens: envDict["CLAUDE_CODE_MAX_OUTPUT_TOKENS"],
+            disableInterleavedThinking: envDict["DISABLE_INTERLEAVED_THINKING"] == "1"
         ))
     }
 }
