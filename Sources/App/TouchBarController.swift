@@ -11,15 +11,28 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
 
     // 持有各 item 的 view 引用，状态变化时直接更新 view，不重建 NSTouchBar
     private var providerButton: NSButton?
-    private var modelLabel: NSTextField?
+    private var modelLabel: NSButton?
     private var balanceLabel: NSTextField?
     private var contextLabel: NSTextField?
     private var costLabel: NSTextField?
     private var thinkingLabel: NSTextField?
-    private var gitBranchLabel: NSTextField?
+    private var gitBranchLabel: NSButton?
     private var itemViews: [NSView] = []
     private var iconButtons: [NSButton] = []
     private var separatorViews: [NSView] = []
+
+    // 宽度切换：点击 provider/model/gitBranch 在自适应和固定宽度之间切换
+    private var providerAutoWidth: NSLayoutConstraint?
+    private var providerFixedWidth: NSLayoutConstraint?
+    private var providerWidthIsFixed = true
+    private var modelAutoMaxWidth: NSLayoutConstraint?
+    private var modelAutoMinWidth: NSLayoutConstraint?
+    private var modelFixedWidth: NSLayoutConstraint?
+    private var modelWidthIsFixed = true
+    private var gitBranchAutoMaxWidth: NSLayoutConstraint?
+    private var gitBranchAutoMinWidth: NSLayoutConstraint?
+    private var gitBranchFixedWidth: NSLayoutConstraint?
+    private var gitBranchWidthIsFixed = true
 
     private var observerActive = false
     private var dfrEnabled = false
@@ -112,7 +125,9 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
             refreshProviderTitle()
         }
         providerButton?.toolTip = state?.providerName ?? "—"
-        modelLabel?.stringValue = state?.contextModelName ?? state?.defaultModel ?? "—"
+        if modelLabel?.title != modelText {
+            refreshModelTitle()
+        }
         balanceLabel?.stringValue = balanceText
         contextLabel?.stringValue = contextText
         contextLabel?.toolTip = contextTooltip
@@ -120,7 +135,9 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
         costLabel?.toolTip = costTooltip
         thinkingLabel?.stringValue = thinkingText
         thinkingLabel?.toolTip = thinkingTooltip
-        gitBranchLabel?.stringValue = gitBranchText
+        if gitBranchLabel?.title != gitBranchText {
+            refreshGitBranchTitle()
+        }
         gitBranchLabel?.toolTip = gitBranchTooltip
     }
 
@@ -132,14 +149,19 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
         switch id {
         case .provider:
             let item = NSCustomTouchBarItem(identifier: id)
-            let button = NSButton(title: state?.providerName ?? "—", target: nil, action: nil)
+            let button = NSButton(title: state?.providerName ?? "—", target: self, action: #selector(toggleProviderWidth))
             button.lineBreakMode = .byTruncatingTail
             button.cell?.truncatesLastVisibleLine = true
             button.cell?.wraps = false
             button.translatesAutoresizingMaskIntoConstraints = false
-            button.widthAnchor.constraint(lessThanOrEqualToConstant: 110).isActive = true
+            let autoC = button.widthAnchor.constraint(lessThanOrEqualToConstant: 400)
+            autoC.isActive = false
+            providerAutoWidth = autoC
+            let fixedC = button.widthAnchor.constraint(equalToConstant: 80)
+            fixedC.isActive = true
+            providerFixedWidth = fixedC
             button.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-            button.setContentHuggingPriority(.required, for: .horizontal)
+            button.setContentHuggingPriority(.defaultLow, for: .horizontal)
             button.toolTip = state?.providerName ?? "—"
             self.providerButton = button
             item.view = button
@@ -149,20 +171,30 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
 
         case .model:
             let item = NSCustomTouchBarItem(identifier: id)
-            let label = NSTextField(labelWithString: state?.contextModelName ?? state?.defaultModel ?? "—")
-            label.alignment = .center
-            label.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
-            label.lineBreakMode = .byTruncatingTail
-            label.cell?.wraps = false
-            label.cell?.truncatesLastVisibleLine = true
-            label.translatesAutoresizingMaskIntoConstraints = false
-            label.widthAnchor.constraint(lessThanOrEqualToConstant: 100).isActive = true
-            label.widthAnchor.constraint(greaterThanOrEqualToConstant: 24).isActive = true
-            label.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
-            label.setContentHuggingPriority(.defaultHigh, for: .horizontal)
-            self.modelLabel = label
-            item.view = label
-            registerItem(view: label)
+            let button = NSButton(title: modelText, target: self, action: #selector(toggleModelWidth))
+            button.isBordered = false
+            button.bezelStyle = .inline
+            button.alignment = .center
+            button.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+            button.lineBreakMode = .byTruncatingTail
+            button.cell?.wraps = false
+            button.cell?.truncatesLastVisibleLine = true
+            button.translatesAutoresizingMaskIntoConstraints = false
+            let maxC = button.widthAnchor.constraint(lessThanOrEqualToConstant: 400)
+            let minC = button.widthAnchor.constraint(greaterThanOrEqualToConstant: 24)
+            maxC.isActive = false
+            minC.isActive = false
+            modelAutoMaxWidth = maxC
+            modelAutoMinWidth = minC
+            let fixedC = button.widthAnchor.constraint(equalToConstant: 80)
+            fixedC.isActive = true
+            modelFixedWidth = fixedC
+            button.setContentCompressionResistancePriority(.required, for: .horizontal)
+            button.setContentHuggingPriority(.defaultLow, for: .horizontal)
+            self.modelLabel = button
+            item.view = button
+            registerItem(view: button)
+            refreshModelTitle()
             return item
 
         case .balance:
@@ -253,21 +285,31 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
 
         case .gitBranch:
             let item = NSCustomTouchBarItem(identifier: id)
-            let label = NSTextField(labelWithString: gitBranchText)
-            label.alignment = .center
-            label.font = .monospacedSystemFont(ofSize: 10, weight: .regular)
-            label.toolTip = gitBranchTooltip
-            label.lineBreakMode = .byTruncatingTail
-            label.cell?.wraps = false
-            label.cell?.truncatesLastVisibleLine = true
-            label.translatesAutoresizingMaskIntoConstraints = false
-            label.widthAnchor.constraint(lessThanOrEqualToConstant: 80).isActive = true
-            label.widthAnchor.constraint(greaterThanOrEqualToConstant: 30).isActive = true
-            label.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
-            label.setContentHuggingPriority(.defaultHigh, for: .horizontal)
-            self.gitBranchLabel = label
-            item.view = label
-            registerItem(view: label)
+            let button = NSButton(title: gitBranchText, target: self, action: #selector(toggleGitBranchWidth))
+            button.isBordered = false
+            button.bezelStyle = .inline
+            button.alignment = .center
+            button.font = .monospacedSystemFont(ofSize: 10, weight: .regular)
+            button.toolTip = gitBranchTooltip
+            button.lineBreakMode = .byTruncatingTail
+            button.cell?.wraps = false
+            button.cell?.truncatesLastVisibleLine = true
+            button.translatesAutoresizingMaskIntoConstraints = false
+            let maxC = button.widthAnchor.constraint(lessThanOrEqualToConstant: 400)
+            let minC = button.widthAnchor.constraint(greaterThanOrEqualToConstant: 30)
+            maxC.isActive = false
+            minC.isActive = false
+            gitBranchAutoMaxWidth = maxC
+            gitBranchAutoMinWidth = minC
+            let fixedC = button.widthAnchor.constraint(equalToConstant: 80)
+            fixedC.isActive = true
+            gitBranchFixedWidth = fixedC
+            button.setContentCompressionResistancePriority(.required, for: .horizontal)
+            button.setContentHuggingPriority(.defaultLow, for: .horizontal)
+            self.gitBranchLabel = button
+            item.view = button
+            registerItem(view: button)
+            refreshGitBranchTitle()
             return item
 
         default:
@@ -306,6 +348,8 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
         if let provider = providerButton {
             applyProviderTheme(button: provider)
         }
+        refreshModelTitle()
+        refreshGitBranchTitle()
     }
 
     private func applyTheme(toItemView view: NSView) {
@@ -348,6 +392,52 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
             .font: NSFont.systemFont(ofSize: NSFont.systemFontSize(for: .small), weight: .semibold)
         ]
         button.attributedTitle = NSAttributedString(string: title, attributes: attrs)
+    }
+
+    private var modelText: String {
+        let raw = state?.contextModelName ?? state?.defaultModel ?? ""
+        return raw.isEmpty ? "—" : raw
+    }
+
+    private func refreshModelTitle() {
+        guard let button = modelLabel else { return }
+        let attrs: [NSAttributedString.Key: Any] = [
+            .foregroundColor: theme.secondaryText,
+            .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+        ]
+        button.attributedTitle = NSAttributedString(string: modelText, attributes: attrs)
+    }
+
+    private func refreshGitBranchTitle() {
+        guard let button = gitBranchLabel else { return }
+        let attrs: [NSAttributedString.Key: Any] = [
+            .foregroundColor: theme.secondaryText,
+            .font: NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
+        ]
+        button.attributedTitle = NSAttributedString(string: gitBranchText, attributes: attrs)
+    }
+
+    @objc private func toggleProviderWidth() {
+        providerWidthIsFixed.toggle()
+        providerAutoWidth?.isActive = !providerWidthIsFixed
+        providerFixedWidth?.isActive = providerWidthIsFixed
+        providerButton?.layoutSubtreeIfNeeded()
+    }
+
+    @objc private func toggleModelWidth() {
+        modelWidthIsFixed.toggle()
+        modelAutoMaxWidth?.isActive = !modelWidthIsFixed
+        modelAutoMinWidth?.isActive = !modelWidthIsFixed
+        modelFixedWidth?.isActive = modelWidthIsFixed
+        modelLabel?.layoutSubtreeIfNeeded()
+    }
+
+    @objc private func toggleGitBranchWidth() {
+        gitBranchWidthIsFixed.toggle()
+        gitBranchAutoMaxWidth?.isActive = !gitBranchWidthIsFixed
+        gitBranchAutoMinWidth?.isActive = !gitBranchWidthIsFixed
+        gitBranchFixedWidth?.isActive = gitBranchWidthIsFixed
+        gitBranchLabel?.layoutSubtreeIfNeeded()
     }
 
     private var balanceText: String {

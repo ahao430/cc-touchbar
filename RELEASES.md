@@ -2,6 +2,17 @@
 
 版本说明。tag 触发 GitHub Actions 自动构建未签名 zip 并发布到 GitHub Releases。
 
+## 0.0.5
+
+点击切换宽度 + DeepSeek 模型名修复 + git 分支检测增强。
+
+### 功能
+
+- **点击切换宽度**：provider / model / gitBranch 改成可点击的 NSButton，默认进入固定宽度模式（500pt），点击切换到自适应（≤400pt）。视觉上呈现"宽-窄"切换。
+- **DeepSeek 模型名修复**：transcript 解析即使 assistant 消息没有 usage 字段也读 model 字段，解决 DeepSeek 等通过 OpenAI 兼容协议的供应商 model 显示成 "—" 的问题。
+- **model 空值 fallback**：contextModelName / defaultModel 为空字符串时统一显示 "—"。
+- **git 分支检测**：启动后立即检测一次；cwd 在仓库子目录时向上递归找最近的 `.git`，避免子目录场景下显示 `—`。
+
 ## 0.0.4
 
 Git 分支显示 + 模型名修复 + 布局压缩。

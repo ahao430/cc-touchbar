@@ -13,6 +13,7 @@ final class TranscriptWatcher {
         self.store = store
         self.state = state
         observeFocus()
+        detectGitBranch()
         timer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.refresh()
@@ -41,9 +42,11 @@ final class TranscriptWatcher {
             state.gitBranch = nil
             return
         }
+        let currentURL = URL(fileURLWithPath: cwd)
+        let gitCwd = nearestGitDirectory(from: currentURL) ?? currentURL
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        task.arguments = ["-C", cwd, "branch", "--show-current"]
+        task.arguments = ["-C", gitCwd.path, "branch", "--show-current"]
         task.qualityOfService = .utility
         let pipe = Pipe()
         task.standardOutput = pipe
@@ -57,6 +60,18 @@ final class TranscriptWatcher {
             state.gitBranch = (branch?.isEmpty == false) ? branch : nil
         } catch {
             state.gitBranch = nil
+        }
+    }
+
+    private func nearestGitDirectory(from url: URL) -> URL? {
+        var current = url
+        while true {
+            if FileManager.default.fileExists(atPath: current.appendingPathComponent(".git").path) {
+                return current
+            }
+            let parent = current.deletingLastPathComponent()
+            if parent.path == current.path { return nil }
+            current = parent
         }
     }
 
@@ -91,8 +106,13 @@ final class TranscriptWatcher {
             guard let lineData = line.data(using: .utf8),
                   let obj = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
                   (obj["type"] as? String) == "assistant",
-                  let message = obj["message"] as? [String: Any],
-                  let usage = message["usage"] as? [String: Any] else {
+                  let message = obj["message"] as? [String: Any] else {
+                continue
+            }
+            if let m = message["model"] as? String, !m.isEmpty {
+                lastModel = m
+            }
+            guard let usage = message["usage"] as? [String: Any] else {
                 continue
             }
             let u = Usage(
@@ -102,7 +122,6 @@ final class TranscriptWatcher {
                 output: (usage["output_tokens"] as? Int) ?? 0
             )
             lastUsage = u
-            lastModel = message["model"] as? String
             billedTotal += Double(u.input)
                       + Double(u.cacheCreation) * 1.25
                       + Double(u.cacheRead) * 0.1
@@ -110,13 +129,20 @@ final class TranscriptWatcher {
             assistantCount += 1
         }
 
+        if let m = lastModel {
+            state.contextModelName = m
+        }
+
         guard let u = lastUsage else {
-            clear()
+            state.contextUsedTokens = nil
+            state.contextLimitTokens = nil
+            state.sessionBilledTokens = nil
+            state.sessionAssistantTurns = nil
+            state.cacheHitRate = nil
             return
         }
 
         state.contextUsedTokens = u.input + u.cacheRead + u.cacheCreation
-        state.contextModelName = lastModel
         state.contextLimitTokens = Self.contextLimit(for: lastModel ?? state.defaultModel)
         state.sessionBilledTokens = Int(billedTotal.rounded())
         state.sessionAssistantTurns = assistantCount
