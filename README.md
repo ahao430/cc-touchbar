@@ -1,11 +1,14 @@
 # cc-touchbar
 
+![./docs/touchbar.jpg](./docs/touchbar.jpg)
+
 Claude Code 的 Touch Bar HUD：在 MacBook Touch Bar 上显示当前 provider、模型、订阅余额、会话状态等信息，并支持一键切换 cc switch provider、激活对应终端窗口。
 
 仅支持带 Touch Bar 的 MacBook：
 
 - MacBook Pro 2016–2019 (Intel)
 - MacBook Pro 2020 (M1, 13-inch)
+
 
 ## 功能速览
 
