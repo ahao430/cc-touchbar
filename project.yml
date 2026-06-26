@@ -1,0 +1,56 @@
+name: cc-touchbar
+options:
+  bundleIdPrefix: com.cctouchbar
+  deploymentTarget:
+    macOS: "14.0"
+  developmentLanguage: zh-Hans
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MARKETING_VERSION: "0.0.1"
+    CURRENT_PROJECT_VERSION: "1"
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_IDENTITY: "-"
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_HARDENED_RUNTIME: NO
+    SWIFT_STRICT_CONCURRENCY: minimal
+
+targets:
+  cc-touchbar:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: Sources/App
+      - path: Resources/ClaudeIcon.png
+        buildPhase: resources
+      - path: Resources/logo.png
+        buildPhase: resources
+      - path: Resources/AppIcon.icns
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.cctouchbar.app
+        PRODUCT_NAME: cc-touchbar
+        INFOPLIST_FILE: Resources/Info.plist
+        INFOPLIST_KEY_LSUIElement: NO
+        INFOPLIST_KEY_NSAppleEventsUsageDescription: "cc-touchbar 使用 AppleScript 激活终端窗口。"
+        INFOPLIST_KEY_NSHumanReadableCopyright: "Copyright © 2026"
+        CODE_SIGN_ENTITLEMENTS: ""
+
+schemes:
+  cc-touchbar:
+    build:
+      targets:
+        cc-touchbar: all
+    run:
+      config: Debug
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release

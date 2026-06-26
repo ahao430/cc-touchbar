@@ -1,0 +1,21 @@
+# Build artifacts
+build/
+DerivedData/
+.build/
+
+# Xcode
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+
+# Generated artifacts
+*.app
+*.dmg
+*.zip
+
+# Editor
+.vscode/
+.idea/
+
+# Claude Code local
+.claude/
