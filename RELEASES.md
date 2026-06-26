@@ -2,6 +2,25 @@
 
 版本说明。tag 触发 GitHub Actions 自动构建未签名 zip 并发布到 GitHub Releases。
 
+## 0.0.3
+
+Intel 支持：分别构建 arm64 / x86_64 两个 zip，都发到 release assets。修复 CI 权限问题。
+
+### 功能
+
+- **Intel 支持**：`ARCHS=arm64` + `ARCHS=x86_64` 两轮 `xcodebuild`，各打独立 zip
+- **CI 权限修复**：workflow 加 `permissions.contents: write`，确保 release 步骤不会因默认只读 token 失败
+
+### 设计变更
+
+- 放弃 universal binary（xcodebuild 默认只打 host arch 行为），改用两次构建分别产出 arm64 / x86_64 zip
+- 两个 zip 同名产品 `.app`，只是包含的 arch 不同；用户按 MacBook 机型下载对应版本
+
+### 限制
+
+- x86_64 构建在 Apple Silicon runner（`macos-15`）上交叉编译；如果 Rosetta 工具链不可用，xcodebuild 会 fallback 失败（GitHub 确认 `macos-15` 支持交叉编译 `x86_64`）
+- 当前项目没有自签名公证能力，两个 zip 打开都需要右键放行
+
 ## 0.0.2
 
 HUD 信息密度扩展：上下文用量 / 累计 token / cache 命中率 / thinking 预算。

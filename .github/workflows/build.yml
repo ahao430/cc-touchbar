@@ -27,13 +27,29 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen
 
-      - name: Build
+      - name: Build arm64
         run: |
           xcodebuild \
             -project cc-touchbar.xcodeproj \
             -scheme cc-touchbar \
             -configuration Release \
-            -derivedDataPath build \
+            -derivedDataPath build-arm64 \
+            ARCHS=arm64 \
+            ONLY_ACTIVE_ARCH=NO \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Build x86_64
+        run: |
+          xcodebuild \
+            -project cc-touchbar.xcodeproj \
+            -scheme cc-touchbar \
+            -configuration Release \
+            -derivedDataPath build-x86_64 \
+            ARCHS=x86_64 \
+            ONLY_ACTIVE_ARCH=NO \
             CODE_SIGN_IDENTITY="-" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
@@ -42,21 +58,31 @@ jobs:
       - name: Package .app
         id: pkg
         run: |
-          cd build/Build/Products/Release
-          zip -r "$GITHUB_WORKSPACE/cc-touchbar-unsigned.zip" cc-touchbar.app
+          cd build-arm64/Build/Products/Release
+          zip -r "$GITHUB_WORKSPACE/cc-touchbar-arm64-unsigned.zip" cc-touchbar.app
+          cd "$GITHUB_WORKSPACE/build-x86_64/Build/Products/Release"
+          zip -r "$GITHUB_WORKSPACE/cc-touchbar-x86_64-unsigned.zip" cc-touchbar.app
           echo "version=${GITHUB_REF_NAME:-dev}" >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: cc-touchbar-unsigned
-          path: cc-touchbar-unsigned.zip
+          name: cc-touchbar-arm64
+          path: cc-touchbar-arm64-unsigned.zip
+          retention-days: 30
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cc-touchbar-x86_64
+          path: cc-touchbar-x86_64-unsigned.zip
           retention-days: 30
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: cc-touchbar-unsigned.zip
+          files: |
+            cc-touchbar-arm64-unsigned.zip
+            cc-touchbar-x86_64-unsigned.zip
           name: ${{ github.ref_name }}
           generate_release_notes: true
           draft: false
