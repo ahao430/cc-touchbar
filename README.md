@@ -69,3 +69,9 @@ git push origin v0.0.1
 ```
 
 CI 会自动构建未签名 zip，创建 Release，并附上自动生成的 changelog。tag 名带 `-`（如 `v0.0.1-rc1`）会标记为 prerelease。
+
+
+🙏 致谢
+感谢真诚、友善、团结、专业的 LinuxDo 社区，让我学到那么多有关 AI 相关知识。
+
+LinuxDo — 学 AI, 上 L 站!
