@@ -84,10 +84,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         bridge.reload()
 
-        // 3.5. 周期刷新余额（30s 一次，捕捉 cc-switch 写库后的变化）
-        balanceRefreshTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.bridge.reload() }
-        }
+        // 3.5. 周期刷新余额，捕捉 cc-switch 写库后的变化
+        rescheduleBalanceTimer()
 
         // 4. 主窗口
         let wc = MainWindowController(state: state, sessions: sessions, bridge: bridge)
@@ -99,6 +97,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         wc.onRestartTouchBar = { [weak self] in
             self?.restartTouchBar()
+        }
+        wc.onIntervalsChanged = { [weak self] in
+            self?.reapplyIntervals()
         }
         mainWindowController = wc
 
@@ -273,6 +274,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 主题变化后把新主题推到 Touch Bar
     func applyTheme() {
         touchBarController?.applyTheme(Theme.current())
+    }
+
+    /// 间隔变化后重建余额定时器 + transcript/git 分支定时器
+    func reapplyIntervals() {
+        rescheduleBalanceTimer()
+        transcriptWatcher?.reschedule()
+    }
+
+    private func rescheduleBalanceTimer() {
+        balanceRefreshTimer?.invalidate()
+        let interval = PreferenceStore.shared.balanceIntervalSeconds
+        balanceRefreshTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.bridge.reload() }
+        }
     }
 
     /// 重启 Touch Bar

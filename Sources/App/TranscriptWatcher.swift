@@ -14,7 +14,14 @@ final class TranscriptWatcher {
         self.state = state
         observeFocus()
         detectGitBranch()
-        timer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+        reschedule()
+    }
+
+    /// 间隔变化后重建定时器（设置面板调用）
+    func reschedule() {
+        timer?.invalidate()
+        let interval = PreferenceStore.shared.pollIntervalSeconds
+        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.refresh()
                 self?.detectGitBranch()

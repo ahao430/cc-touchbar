@@ -2,6 +2,29 @@
 
 版本说明。tag 触发 GitHub Actions 自动构建未签名 zip 并发布到 GitHub Releases。
 
+## 0.0.8
+
+可配轮询间隔 + 设置面板交互细化 + 主窗口 padding。
+
+### 功能
+
+- **轮询间隔可配**：设置面板新增「轮询间隔」section，可分别配置
+  - Transcript / Git 分支检测：默认 **5s**（原 1.5s），范围 0.5–60s
+  - 订阅余额刷新：默认 **30s**，范围 5–3600s
+  - 输入框配 `NSNumberFormatter`（`isPartialStringValidationEnabled`），实时拦截非数字 / 多个小数点
+  - 输入框右侧 `NSStepper`，步长 1s，点击即时写入并重建定时器（无需再点应用）
+  - 「应用」按钮调用统一 `parseInterval` 校验：解析失败或越界弹 `NSAlert`「输入无效」并保留原值
+- **路径 / 间隔区域左对齐**：`makePathsSection` / `makeIntervalsSection` 的 `section.alignment` 从 `.width` 改为 `.leading`，标题、标签、控件按 intrinsic 宽度左对齐；间隔行去掉 `horizontalSpacer`
+- **主窗口上下 padding**：`headerView.topAnchor` / `footerView.bottomAnchor` 加 ±12pt constant，叠加各自 edgeInsets 18pt，整体内容距窗口边 ≈ 30pt
+- **间隔字段样式**：宽度 80pt 居中、`monospacedSystemFont`，应用按钮触发解析 + 范围检查 + 弹窗反馈
+
+### 设计变更
+
+- `PreferenceStore` 新增 `pollIntervalSeconds` / `balanceIntervalSeconds` 属性，getter/setter 内置 clamp，越界值自动夹到范围内
+- `TranscriptWatcher` 拆出 `reschedule()`，间隔变化时由 AppDelegate 调用重建定时器
+- `AppDelegate` 拆出 `rescheduleBalanceTimer()` + `reapplyIntervals()`，主窗口通过 `onIntervalsChanged` 回调触发
+- `MainWindowController` 新增 `pollIntervalField` / `pollIntervalStepper` / `balanceIntervalField` / `balanceIntervalStepper` 弱引用，apply / stepper 变化时双向同步
+
 ## 0.0.7
 
 设置面板 + 14 套主题 + HUD 圆角背景层 + Dock 行为修复。

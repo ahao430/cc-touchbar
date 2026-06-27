@@ -19,6 +19,12 @@ final class MainWindowController: NSWindowController {
     private var currentPanel: MainPanel = .sessions
     private var observerToken: Any?
 
+    /// 设置面板里的两个间隔输入框 + stepper，apply / stepper 变化时读写
+    private weak var pollIntervalField: NSTextField?
+    private weak var pollIntervalStepper: NSStepper?
+    private weak var balanceIntervalField: NSTextField?
+    private weak var balanceIntervalStepper: NSStepper?
+
     /// 路径覆盖变化后由 AppDelegate 重新跑诊断 + 刷 HUD
     var onPathsChanged: (() -> Void)?
 
@@ -27,6 +33,9 @@ final class MainWindowController: NSWindowController {
 
     /// 重启 Touch Bar（DFR dismiss + 重新 make + present）
     var onRestartTouchBar: (() -> Void)?
+
+    /// 轮询间隔变化后由 AppDelegate 重建 transcript / 余额定时器
+    var onIntervalsChanged: (() -> Void)?
 
     init(state: AppState, sessions: SessionStore, bridge: CCSwitchBridge) {
         self.state = state
@@ -54,13 +63,13 @@ final class MainWindowController: NSWindowController {
         // Header
         headerView.orientation = .horizontal
         headerView.spacing = 12
-        headerView.edgeInsets = NSEdgeInsets(top: 12, left: 16, bottom: 12, right: 16)
+        headerView.edgeInsets = NSEdgeInsets(top: 18, left: 16, bottom: 12, right: 16)
         headerView.translatesAutoresizingMaskIntoConstraints = false
 
         // Footer
         footerView.orientation = .horizontal
         footerView.spacing = 8
-        footerView.edgeInsets = NSEdgeInsets(top: 8, left: 16, bottom: 12, right: 16)
+        footerView.edgeInsets = NSEdgeInsets(top: 8, left: 16, bottom: 18, right: 16)
         footerView.translatesAutoresizingMaskIntoConstraints = false
 
         // Table
@@ -90,7 +99,7 @@ final class MainWindowController: NSWindowController {
         contentView.addSubview(footerView)
 
         NSLayoutConstraint.activate([
-            headerView.topAnchor.constraint(equalTo: contentView.topAnchor),
+            headerView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 12),
             headerView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             headerView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
 
@@ -106,7 +115,7 @@ final class MainWindowController: NSWindowController {
 
             footerView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             footerView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-            footerView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
+            footerView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -12)
         ])
 
         window?.minSize = NSSize(width: 640, height: 400)
@@ -223,6 +232,8 @@ final class MainWindowController: NSWindowController {
         settingsContainer.addArrangedSubview(makeThemeSection())
         settingsContainer.addArrangedSubview(makeDivider())
         settingsContainer.addArrangedSubview(makePathsSection())
+        settingsContainer.addArrangedSubview(makeDivider())
+        settingsContainer.addArrangedSubview(makeIntervalsSection())
     }
 
     private func sectionTitle(_ text: String) -> NSTextField {
@@ -322,7 +333,7 @@ final class MainWindowController: NSWindowController {
     private func makePathsSection() -> NSView {
         let section = NSStackView()
         section.orientation = .vertical
-        section.alignment = .width
+        section.alignment = .leading
         section.spacing = 8
 
         let titleLabel = sectionTitle("路径")
@@ -409,6 +420,98 @@ final class MainWindowController: NSWindowController {
         return "未找到 \(tag)"
     }
 
+    private func makeIntervalsSection() -> NSView {
+        let section = NSStackView()
+        section.orientation = .vertical
+        section.alignment = .leading
+        section.spacing = 8
+
+        section.addArrangedSubview(sectionTitle("轮询间隔"))
+        section.addArrangedSubview(sectionHint("Transcript / Git 分支检测：范围 0.5–60s；订阅余额刷新：范围 5–3600s。输入框只允许数字和小数点；点上下箭头 ±1s 即时生效；输入后点「应用」校验并生效。"))
+
+        let (pollRow, pollField, pollStepper) = makeIntervalRow(
+            labelText: "Transcript / Git 分支",
+            value: PreferenceStore.shared.pollIntervalSeconds,
+            minValue: 0.5,
+            maxValue: 60,
+            applyAction: #selector(applyPollInterval),
+            stepperAction: #selector(pollStepperChanged(_:))
+        )
+        pollIntervalField = pollField
+        pollIntervalStepper = pollStepper
+        section.addArrangedSubview(pollRow)
+
+        let (balanceRow, balanceField, balanceStepper) = makeIntervalRow(
+            labelText: "订阅余额",
+            value: PreferenceStore.shared.balanceIntervalSeconds,
+            minValue: 5,
+            maxValue: 3600,
+            applyAction: #selector(applyBalanceInterval),
+            stepperAction: #selector(balanceStepperChanged(_:))
+        )
+        balanceIntervalField = balanceField
+        balanceIntervalStepper = balanceStepper
+        section.addArrangedSubview(balanceRow)
+
+        return section
+    }
+
+    private func makeIntervalRow(labelText: String,
+                                  value: Double,
+                                  minValue: Double,
+                                  maxValue: Double,
+                                  applyAction: Selector,
+                                  stepperAction: Selector) -> (NSView, NSTextField, NSStepper) {
+        let row = NSStackView()
+        row.orientation = .horizontal
+        row.spacing = 6
+        row.alignment = .centerY
+        row.edgeInsets = NSEdgeInsets(top: 4, left: 0, bottom: 4, right: 0)
+
+        let label = NSTextField(labelWithString: labelText)
+        label.font = .systemFont(ofSize: 12, weight: .medium)
+        label.widthAnchor.constraint(equalToConstant: 150).isActive = true
+
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.allowsFloats = true
+        formatter.minimumFractionDigits = 1
+        formatter.maximumFractionDigits = 1
+        formatter.isPartialStringValidationEnabled = true
+
+        let field = NSTextField()
+        field.formatter = formatter
+        field.stringValue = String(format: "%.1f", value)
+        field.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        field.alignment = .center
+        field.widthAnchor.constraint(equalToConstant: 80).isActive = true
+        field.target = self
+        field.action = applyAction
+
+        let suffixLabel = NSTextField(labelWithString: "秒")
+        suffixLabel.textColor = .secondaryLabelColor
+        suffixLabel.font = .systemFont(ofSize: 11)
+
+        let stepper = NSStepper()
+        stepper.minValue = minValue
+        stepper.maxValue = maxValue
+        stepper.increment = 1
+        stepper.valueWraps = false
+        stepper.doubleValue = value
+        stepper.target = self
+        stepper.action = stepperAction
+
+        let applyBtn = NSButton(title: "应用", target: self, action: applyAction)
+        applyBtn.bezelStyle = .rounded
+
+        row.addArrangedSubview(label)
+        row.addArrangedSubview(field)
+        row.addArrangedSubview(suffixLabel)
+        row.addArrangedSubview(stepper)
+        row.addArrangedSubview(applyBtn)
+        return (row, field, stepper)
+    }
+
     @objc private func pickTheme(_ sender: NSButton) {
         let i = sender.tag
         if i >= 0 && i < Theme.all.count {
@@ -456,6 +559,64 @@ final class MainWindowController: NSWindowController {
         PreferenceStore.shared.ccSwitchDBOverride = nil
         onPathsChanged?()
         rebuildSettings()
+    }
+
+    @objc private func applyPollInterval() {
+        guard let field = pollIntervalField else { return }
+        guard let v = parseInterval(field: field, min: 0.5, max: 60,
+                                     message: "Transcript / Git 分支间隔必须在 0.5 – 60 秒之间") else { return }
+        PreferenceStore.shared.pollIntervalSeconds = v
+        pollIntervalStepper?.doubleValue = v
+        onIntervalsChanged?()
+    }
+
+    @objc private func applyBalanceInterval() {
+        guard let field = balanceIntervalField else { return }
+        guard let v = parseInterval(field: field, min: 5, max: 3600,
+                                     message: "订阅余额刷新间隔必须在 5 – 3600 秒之间") else { return }
+        PreferenceStore.shared.balanceIntervalSeconds = v
+        balanceIntervalStepper?.doubleValue = v
+        onIntervalsChanged?()
+    }
+
+    @objc private func pollStepperChanged(_ sender: NSStepper) {
+        let v = sender.doubleValue
+        PreferenceStore.shared.pollIntervalSeconds = v
+        pollIntervalField?.stringValue = String(format: "%.1f", v)
+        onIntervalsChanged?()
+    }
+
+    @objc private func balanceStepperChanged(_ sender: NSStepper) {
+        let v = sender.doubleValue
+        PreferenceStore.shared.balanceIntervalSeconds = v
+        balanceIntervalField?.stringValue = String(format: "%.1f", v)
+        onIntervalsChanged?()
+    }
+
+    /// 解析输入框：失败 / 越界时弹窗并返回 nil
+    private func parseInterval(field: NSTextField, min: Double, max: Double, message: String) -> Double? {
+        let raw = field.stringValue.trimmingCharacters(in: .whitespaces)
+        let formatter = NumberFormatter()
+        formatter.decimalSeparator = "."
+        guard let n = formatter.number(from: raw) else {
+            showIntervalAlert("请输入有效的数字。")
+            return nil
+        }
+        let v = n.doubleValue
+        guard v >= min && v <= max else {
+            showIntervalAlert(message)
+            return nil
+        }
+        return v
+    }
+
+    private func showIntervalAlert(_ message: String) {
+        let alert = NSAlert()
+        alert.messageText = "输入无效"
+        alert.informativeText = message
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "好")
+        alert.runModal()
     }
 
     // MARK: - Footer
