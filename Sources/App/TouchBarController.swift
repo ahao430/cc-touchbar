@@ -9,6 +9,9 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
     private weak var bridge: CCSwitchBridge?
     private var touchBar: NSTouchBar?
 
+    /// 整个 HUD 的容器 stack；主题切换时更新这一层的背景
+    private var hudContainer: NSStackView?
+
     // 持有各 item 的 view 引用，状态变化时直接更新 view，不重建 NSTouchBar
     private var providerButton: NSButton?
     private var modelLabel: NSButton?
@@ -45,7 +48,6 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
         self.dfrEnabled = useDFR
         self.theme = Theme.current()
 
-        // 先创建 + present（仅一次），再开始观察
         if useDFR {
             SystemTouchBarPresenter.setupTrayItem(target: self,
                                                   action: #selector(reopenFromTray),
@@ -76,6 +78,42 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
 
     func minimizeDFR() {
         SystemTouchBarPresenter.minimize()
+    }
+
+    /// 重启 Touch Bar：dismiss 当前 NSTouchBar，清空缓存的 view 引用，重新 make + present。
+    /// 适用于 HUD 卡死、布局错乱、或 DFR 状态丢失等场景。
+    func restart() {
+        itemViews.removeAll()
+        iconButtons.removeAll()
+        separatorViews.removeAll()
+        providerButton = nil
+        modelLabel = nil
+        balanceLabel = nil
+        contextLabel = nil
+        costLabel = nil
+        thinkingLabel = nil
+        gitBranchLabel = nil
+        hudContainer = nil
+        providerAutoWidth = nil
+        providerFixedWidth = nil
+        providerWidthIsFixed = true
+        modelAutoMaxWidth = nil
+        modelAutoMinWidth = nil
+        modelFixedWidth = nil
+        modelWidthIsFixed = true
+        gitBranchAutoMaxWidth = nil
+        gitBranchAutoMinWidth = nil
+        gitBranchFixedWidth = nil
+        gitBranchWidthIsFixed = true
+        touchBar = nil
+
+        if dfrEnabled {
+            dismissDFR()
+            presentDFR()
+        } else {
+            NSApp.touchBar = nil
+            NSApp.touchBar = makeTouchBar()
+        }
     }
 
     private func startObservation() {
@@ -112,7 +150,7 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
     func makeTouchBar() -> NSTouchBar? {
         let bar = NSTouchBar()
         bar.delegate = self
-        bar.defaultItemIdentifiers = identifiers()
+        bar.defaultItemIdentifiers = [.hud]
         bar.customizationIdentifier = nil
         bar.customizationAllowedItemIdentifiers = []
         self.touchBar = bar
@@ -141,180 +179,215 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
         gitBranchLabel?.toolTip = gitBranchTooltip
     }
 
-    private func identifiers() -> [NSTouchBarItem.Identifier] {
-        return [.provider, .model, .sep1, .balance, .sep2, .context, .cost, .thinking, .sep3, .gitBranch, .openApp, .openCCSwitch, .collapse]
+    func touchBar(_ touchBar: NSTouchBar, makeItemForIdentifier id: NSTouchBarItem.Identifier) -> NSTouchBarItem? {
+        guard id == .hud else { return nil }
+        return makeHUDItem(identifier: id)
     }
 
-    func touchBar(_ touchBar: NSTouchBar, makeItemForIdentifier id: NSTouchBarItem.Identifier) -> NSTouchBarItem? {
-        switch id {
-        case .provider:
-            let item = NSCustomTouchBarItem(identifier: id)
-            let button = NSButton(title: state?.providerName ?? "—", target: self, action: #selector(toggleProviderWidth))
-            button.lineBreakMode = .byTruncatingTail
-            button.cell?.truncatesLastVisibleLine = true
-            button.cell?.wraps = false
-            button.translatesAutoresizingMaskIntoConstraints = false
-            let autoC = button.widthAnchor.constraint(lessThanOrEqualToConstant: 400)
-            autoC.isActive = false
-            providerAutoWidth = autoC
-            let fixedC = button.widthAnchor.constraint(equalToConstant: 80)
-            fixedC.isActive = true
-            providerFixedWidth = fixedC
-            button.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-            button.setContentHuggingPriority(.defaultLow, for: .horizontal)
-            button.toolTip = state?.providerName ?? "—"
-            self.providerButton = button
-            item.view = button
-            registerItem(view: button)
-            applyProviderTheme(button: button)
-            return item
+    // MARK: - HUD
 
-        case .model:
-            let item = NSCustomTouchBarItem(identifier: id)
-            let button = NSButton(title: modelText, target: self, action: #selector(toggleModelWidth))
-            button.isBordered = false
-            button.bezelStyle = .inline
-            button.alignment = .center
-            button.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
-            button.lineBreakMode = .byTruncatingTail
-            button.cell?.wraps = false
-            button.cell?.truncatesLastVisibleLine = true
-            button.translatesAutoresizingMaskIntoConstraints = false
-            let maxC = button.widthAnchor.constraint(lessThanOrEqualToConstant: 400)
-            let minC = button.widthAnchor.constraint(greaterThanOrEqualToConstant: 24)
-            maxC.isActive = false
-            minC.isActive = false
-            modelAutoMaxWidth = maxC
-            modelAutoMinWidth = minC
-            let fixedC = button.widthAnchor.constraint(equalToConstant: 80)
-            fixedC.isActive = true
-            modelFixedWidth = fixedC
-            button.setContentCompressionResistancePriority(.required, for: .horizontal)
-            button.setContentHuggingPriority(.defaultLow, for: .horizontal)
-            self.modelLabel = button
-            item.view = button
-            registerItem(view: button)
-            refreshModelTitle()
-            return item
+    /// 整条 HUD 是单个 NSCustomTouchBarItem，里面是一个水平 NSStackView。
+    /// barBackground 应用在 stack 层（整条 Touch Bar 一致背景），不再给每个 item 单独加底色。
+    private func makeHUDItem(identifier: NSTouchBarItem.Identifier) -> NSCustomTouchBarItem {
+        let item = NSCustomTouchBarItem(identifier: identifier)
 
-        case .balance:
-            let item = NSCustomTouchBarItem(identifier: id)
-            let label = NSTextField(labelWithString: balanceText)
-            label.alignment = .center
-            label.font = .monospacedSystemFont(ofSize: 10, weight: .regular)
-            label.toolTip = "当前渠道余额"
-            self.balanceLabel = label
-            item.view = label
-            registerItem(view: label)
-            return item
+        let stack = NSStackView()
+        stack.orientation = .horizontal
+        stack.spacing = 6
+        stack.edgeInsets = NSEdgeInsets(top: 4, left: 8, bottom: 4, right: 8)
+        stack.alignment = .centerY
+        stack.wantsLayer = true
+        stack.layer?.backgroundColor = theme.barBackground?.cgColor
+        stack.layer?.cornerRadius = 8
+        stack.layer?.masksToBounds = true
+        self.hudContainer = stack
 
-        case .context:
-            let item = NSCustomTouchBarItem(identifier: id)
-            let label = NSTextField(labelWithString: contextText)
-            label.alignment = .center
-            label.font = .monospacedSystemFont(ofSize: 10, weight: .regular)
-            label.toolTip = contextTooltip
-            self.contextLabel = label
-            item.view = label
-            registerItem(view: label)
-            return item
+        let provider = makeProviderButton()
+        let model = makeModelButton()
+        let sep1 = makeSeparator()
+        let balance = makeBalanceLabel()
+        let sep2 = makeSeparator()
+        let context = makeContextLabel()
+        let cost = makeCostLabel()
+        let thinking = makeThinkingLabel()
+        let sep3 = makeSeparator()
+        let gitBranch = makeGitBranchButton()
+        let openApp = makeIconButton(image: appIconImage(),
+                                     action: #selector(openApp),
+                                     tooltip: "cc-touchbar")
+        let openCCSwitch = makeIconButton(image: ccSwitchIcon(),
+                                          action: #selector(openCCSwitch),
+                                          tooltip: "CC Switch")
+        let collapse = makeIconButton(
+            image: NSImage(systemSymbolName: "chevron.right.2",
+                           accessibilityDescription: "Collapse")!,
+            action: #selector(collapseTouchBar),
+            tooltip: "收起到 Control Strip"
+        )
 
-        case .cost:
-            let item = NSCustomTouchBarItem(identifier: id)
-            let label = NSTextField(labelWithString: costText)
-            label.alignment = .center
-            label.font = .monospacedSystemFont(ofSize: 10, weight: .regular)
-            label.toolTip = costTooltip
-            self.costLabel = label
-            item.view = label
-            registerItem(view: label)
-            return item
+        stack.addArrangedSubview(provider)
+        stack.addArrangedSubview(model)
+        stack.addArrangedSubview(sep1)
+        stack.addArrangedSubview(balance)
+        stack.addArrangedSubview(sep2)
+        stack.addArrangedSubview(context)
+        stack.addArrangedSubview(cost)
+        stack.addArrangedSubview(thinking)
+        stack.addArrangedSubview(sep3)
+        stack.addArrangedSubview(gitBranch)
+        stack.addArrangedSubview(openApp)
+        stack.addArrangedSubview(openCCSwitch)
+        stack.addArrangedSubview(collapse)
 
-        case .thinking:
-            let item = NSCustomTouchBarItem(identifier: id)
-            let label = NSTextField(labelWithString: thinkingText)
-            label.alignment = .center
-            label.font = .monospacedSystemFont(ofSize: 10, weight: .regular)
-            label.toolTip = thinkingTooltip
-            self.thinkingLabel = label
-            item.view = label
-            registerItem(view: label)
-            return item
+        applyProviderTheme(button: provider)
+        refreshModelTitle()
+        refreshGitBranchTitle()
 
-        case .openApp:
-            let item = NSCustomTouchBarItem(identifier: id)
-            let button = NSButton(image: appIconImage(),
-                                  target: self,
-                                  action: #selector(openApp))
-            configureIconButton(button)
-            item.view = button
-            registerIcon(button: button)
-            return item
+        item.view = stack
+        return item
+    }
 
-        case .openCCSwitch:
-            let item = NSCustomTouchBarItem(identifier: id)
-            let button = NSButton(image: ccSwitchIcon(),
-                                  target: self,
-                                  action: #selector(openCCSwitch))
-            configureIconButton(button)
-            item.view = button
-            registerIcon(button: button)
-            return item
+    private func makeSeparator() -> NSView {
+        let line = NSView()
+        line.wantsLayer = true
+        line.layer?.backgroundColor = theme.separatorColor.cgColor
+        line.translatesAutoresizingMaskIntoConstraints = false
+        line.widthAnchor.constraint(equalToConstant: 1.5).isActive = true
+        line.heightAnchor.constraint(equalToConstant: 22).isActive = true
+        separatorViews.append(line)
+        return line
+    }
 
-        case .collapse:
-            let item = NSCustomTouchBarItem(identifier: id)
-            let button = NSButton(image: NSImage(systemSymbolName: "chevron.right.2", accessibilityDescription: "Collapse")!,
-                                  target: self,
-                                  action: #selector(collapseTouchBar))
-            configureIconButton(button)
-            item.view = button
-            registerIcon(button: button)
-            return item
+    private func makeProviderButton() -> NSButton {
+        let button = NSButton(title: state?.providerName ?? "—",
+                              target: self,
+                              action: #selector(toggleProviderWidth))
+        button.isBordered = false
+        button.bezelStyle = .inline
+        button.alignment = .center
+        button.font = .systemFont(ofSize: 11, weight: .regular)
+        button.lineBreakMode = .byTruncatingTail
+        button.cell?.truncatesLastVisibleLine = true
+        button.cell?.wraps = false
+        button.translatesAutoresizingMaskIntoConstraints = false
+        let autoC = button.widthAnchor.constraint(lessThanOrEqualToConstant: 400)
+        autoC.isActive = false
+        providerAutoWidth = autoC
+        let fixedC = button.widthAnchor.constraint(equalToConstant: 80)
+        fixedC.isActive = true
+        providerFixedWidth = fixedC
+        button.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        button.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        button.toolTip = state?.providerName ?? "—"
+        self.providerButton = button
+        registerItem(view: button)
+        return button
+    }
 
-        case .sep1, .sep2, .sep3:
-            let item = NSCustomTouchBarItem(identifier: id)
-            let line = NSView()
-            line.wantsLayer = true
-            line.layer?.backgroundColor = theme.separatorColor.cgColor
-            line.translatesAutoresizingMaskIntoConstraints = false
-            line.widthAnchor.constraint(equalToConstant: 1.5).isActive = true
-            line.heightAnchor.constraint(equalToConstant: 22).isActive = true
-            item.view = line
-            separatorViews.append(line)
-            return item
+    private func makeModelButton() -> NSButton {
+        let button = NSButton(title: modelText, target: self, action: #selector(toggleModelWidth))
+        button.isBordered = false
+        button.bezelStyle = .inline
+        button.alignment = .center
+        button.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        button.lineBreakMode = .byTruncatingTail
+        button.cell?.wraps = false
+        button.cell?.truncatesLastVisibleLine = true
+        button.translatesAutoresizingMaskIntoConstraints = false
+        let maxC = button.widthAnchor.constraint(lessThanOrEqualToConstant: 400)
+        let minC = button.widthAnchor.constraint(greaterThanOrEqualToConstant: 24)
+        maxC.isActive = false
+        minC.isActive = false
+        modelAutoMaxWidth = maxC
+        modelAutoMinWidth = minC
+        let fixedC = button.widthAnchor.constraint(equalToConstant: 80)
+        fixedC.isActive = true
+        modelFixedWidth = fixedC
+        button.setContentCompressionResistancePriority(.required, for: .horizontal)
+        button.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        self.modelLabel = button
+        registerItem(view: button)
+        return button
+    }
 
-        case .gitBranch:
-            let item = NSCustomTouchBarItem(identifier: id)
-            let button = NSButton(title: gitBranchText, target: self, action: #selector(toggleGitBranchWidth))
-            button.isBordered = false
-            button.bezelStyle = .inline
-            button.alignment = .center
-            button.font = .monospacedSystemFont(ofSize: 10, weight: .regular)
-            button.toolTip = gitBranchTooltip
-            button.lineBreakMode = .byTruncatingTail
-            button.cell?.wraps = false
-            button.cell?.truncatesLastVisibleLine = true
-            button.translatesAutoresizingMaskIntoConstraints = false
-            let maxC = button.widthAnchor.constraint(lessThanOrEqualToConstant: 400)
-            let minC = button.widthAnchor.constraint(greaterThanOrEqualToConstant: 30)
-            maxC.isActive = false
-            minC.isActive = false
-            gitBranchAutoMaxWidth = maxC
-            gitBranchAutoMinWidth = minC
-            let fixedC = button.widthAnchor.constraint(equalToConstant: 80)
-            fixedC.isActive = true
-            gitBranchFixedWidth = fixedC
-            button.setContentCompressionResistancePriority(.required, for: .horizontal)
-            button.setContentHuggingPriority(.defaultLow, for: .horizontal)
-            self.gitBranchLabel = button
-            item.view = button
-            registerItem(view: button)
-            refreshGitBranchTitle()
-            return item
+    private func makeBalanceLabel() -> NSTextField {
+        let label = NSTextField(labelWithString: balanceText)
+        label.alignment = .center
+        label.font = .monospacedSystemFont(ofSize: 10, weight: .regular)
+        label.toolTip = "当前渠道余额"
+        self.balanceLabel = label
+        registerItem(view: label)
+        return label
+    }
 
-        default:
-            return nil
-        }
+    private func makeContextLabel() -> NSTextField {
+        let label = NSTextField(labelWithString: contextText)
+        label.alignment = .center
+        label.font = .monospacedSystemFont(ofSize: 10, weight: .regular)
+        label.toolTip = contextTooltip
+        self.contextLabel = label
+        registerItem(view: label)
+        return label
+    }
+
+    private func makeCostLabel() -> NSTextField {
+        let label = NSTextField(labelWithString: costText)
+        label.alignment = .center
+        label.font = .monospacedSystemFont(ofSize: 10, weight: .regular)
+        label.toolTip = costTooltip
+        self.costLabel = label
+        registerItem(view: label)
+        return label
+    }
+
+    private func makeThinkingLabel() -> NSTextField {
+        let label = NSTextField(labelWithString: thinkingText)
+        label.alignment = .center
+        label.font = .monospacedSystemFont(ofSize: 10, weight: .regular)
+        label.toolTip = thinkingTooltip
+        self.thinkingLabel = label
+        registerItem(view: label)
+        return label
+    }
+
+    private func makeGitBranchButton() -> NSButton {
+        let button = NSButton(title: gitBranchText, target: self, action: #selector(toggleGitBranchWidth))
+        button.isBordered = false
+        button.bezelStyle = .inline
+        button.alignment = .center
+        button.font = .monospacedSystemFont(ofSize: 10, weight: .regular)
+        button.toolTip = gitBranchTooltip
+        button.lineBreakMode = .byTruncatingTail
+        button.cell?.wraps = false
+        button.cell?.truncatesLastVisibleLine = true
+        button.translatesAutoresizingMaskIntoConstraints = false
+        let maxC = button.widthAnchor.constraint(lessThanOrEqualToConstant: 400)
+        let minC = button.widthAnchor.constraint(greaterThanOrEqualToConstant: 30)
+        maxC.isActive = false
+        minC.isActive = false
+        gitBranchAutoMaxWidth = maxC
+        gitBranchAutoMinWidth = minC
+        let fixedC = button.widthAnchor.constraint(equalToConstant: 80)
+        fixedC.isActive = true
+        gitBranchFixedWidth = fixedC
+        button.setContentCompressionResistancePriority(.required, for: .horizontal)
+        button.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        self.gitBranchLabel = button
+        registerItem(view: button)
+        return button
+    }
+
+    private func makeIconButton(image: NSImage, action: Selector, tooltip: String) -> NSButton {
+        let button = NSButton(image: image, target: self, action: action)
+        button.bezelStyle = .inline
+        button.imagePosition = .imageOnly
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.widthAnchor.constraint(equalToConstant: 30).isActive = true
+        button.setContentHuggingPriority(.required, for: .horizontal)
+        button.setContentCompressionResistancePriority(.required, for: .horizontal)
+        button.toolTip = tooltip
+        registerIcon(button: button)
+        return button
     }
 
     private func registerItem(view: NSView) {
@@ -327,21 +400,12 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
         applyTheme(toIconButton: button)
     }
 
-    /// 图标按钮统一压缩：inline bezel + 紧凑宽度
-    private func configureIconButton(_ button: NSButton) {
-        button.bezelStyle = .inline
-        button.imagePosition = .imageOnly
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.widthAnchor.constraint(equalToConstant: 30).isActive = true
-        button.setContentHuggingPriority(.required, for: .horizontal)
-        button.setContentCompressionResistancePriority(.required, for: .horizontal)
-    }
-
     // MARK: - Theme
 
-    /// 主题切换：重新 apply 颜色到所有缓存的 item view
+    /// 主题切换：刷新 HUD 容器背景 + 各 view 文字颜色 + 分隔线颜色
     func applyTheme(_ theme: Theme) {
         self.theme = theme
+        hudContainer?.layer?.backgroundColor = theme.barBackground?.cgColor
         itemViews.forEach { applyTheme(toItemView: $0) }
         iconButtons.forEach { applyTheme(toIconButton: $0) }
         separatorViews.forEach { $0.layer?.backgroundColor = theme.separatorColor.cgColor }
@@ -353,43 +417,26 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
     }
 
     private func applyTheme(toItemView view: NSView) {
-        // item 背景（仅浅色主题会画一层底色）
-        view.wantsLayer = true
-        view.layer?.backgroundColor = theme.itemBackground?.cgColor
-        view.layer?.cornerRadius = 6
-
         if let label = view as? NSTextField {
             label.textColor = theme.secondaryText
         }
     }
 
     private func applyTheme(toIconButton button: NSButton) {
-        // 图标按钮 bezel 用主题 accent 的低透明度
         button.bezelColor = theme.accent.withAlphaComponent(0.25)
         button.contentTintColor = theme.primaryText
-        button.wantsLayer = true
-        button.layer?.backgroundColor = theme.itemBackground?.cgColor
-        button.layer?.cornerRadius = 6
     }
 
     private func applyProviderTheme(button: NSButton) {
-        button.bezelColor = theme.providerBezel
-        // 强制供应商文字用主题 providerText（默认白），保证在彩色 bezel 上读得清
-        let attrs: [NSAttributedString.Key: Any] = [
-            .foregroundColor: theme.providerText,
-            .font: NSFont.systemFont(ofSize: NSFont.systemFontSize(for: .small), weight: .semibold)
-        ]
-        let title = button.title
-        button.attributedTitle = NSAttributedString(string: title, attributes: attrs)
+        refreshProviderTitle()
     }
 
-    // 供应商 title 改变后调用，保留主题文字颜色
     private func refreshProviderTitle() {
         guard let button = providerButton else { return }
         let title = state?.providerName ?? "—"
         let attrs: [NSAttributedString.Key: Any] = [
-            .foregroundColor: theme.providerText,
-            .font: NSFont.systemFont(ofSize: NSFont.systemFontSize(for: .small), weight: .semibold)
+            .foregroundColor: theme.secondaryText,
+            .font: NSFont.systemFont(ofSize: 11, weight: .regular)
         ]
         button.attributedTitle = NSAttributedString(string: title, attributes: attrs)
     }
@@ -594,19 +641,7 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
 }
 
 extension NSTouchBarItem.Identifier {
-    static let provider     = NSTouchBarItem.Identifier("cc-touchbar.provider")
-    static let model        = NSTouchBarItem.Identifier("cc-touchbar.model")
-    static let sep1         = NSTouchBarItem.Identifier("cc-touchbar.sep1")
-    static let balance      = NSTouchBarItem.Identifier("cc-touchbar.balance")
-    static let sep2         = NSTouchBarItem.Identifier("cc-touchbar.sep2")
-    static let context      = NSTouchBarItem.Identifier("cc-touchbar.context")
-    static let cost         = NSTouchBarItem.Identifier("cc-touchbar.cost")
-    static let thinking     = NSTouchBarItem.Identifier("cc-touchbar.thinking")
-    static let sep3         = NSTouchBarItem.Identifier("cc-touchbar.sep3")
-    static let gitBranch    = NSTouchBarItem.Identifier("cc-touchbar.gitBranch")
-    static let openApp      = NSTouchBarItem.Identifier("cc-touchbar.openApp")
-    static let openCCSwitch = NSTouchBarItem.Identifier("cc-touchbar.openCCSwitch")
-    static let collapse     = NSTouchBarItem.Identifier("cc-touchbar.collapse")
+    static let hud = NSTouchBarItem.Identifier("cc-touchbar.hud")
 }
 
 extension Notification.Name {

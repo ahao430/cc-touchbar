@@ -2,6 +2,26 @@
 
 版本说明。tag 触发 GitHub Actions 自动构建未签名 zip 并发布到 GitHub Releases。
 
+## 0.0.7
+
+设置面板 + 14 套主题 + HUD 圆角背景层 + Dock 行为修复。
+
+### 功能
+
+- **内联设置面板**：header 右上角新增齿轮按钮，点击切换主面板到设置视图；设置视图含返回按钮、Touch Bar 主题选择、Claude Code / CC Switch DB 路径覆盖；移除了之前的「设置主题」「设置路径」两个底部弹窗。
+- **14 套主题**：在原深色 / 浅色基础上新增 12 套：Nord、Dracula、Solarized Dark、Tokyo Night、Gruvbox、Rosé Pine、Sunset、Ocean、Forest、Bubblegum、Synthwave、Crimson。设置面板里每个主题以彩色色块预览，按钮背景 + 文字颜色 = 该主题在 Touch Bar 上的实际渲染效果；当前激活主题带强调色边框 + ✓ 前缀。
+- **整条 HUD 圆角背景层**：自定义主题（非默认深色）会在整条 HUD 容器底层绘制圆角（cornerRadius 8）背景层，替代之前每个 item 各自加背景的方案，视觉更整体。
+- **provider 行为微调**：去掉 provider 按钮的 bezel 背景，与其它 item 一致；自动宽度上限 400pt，点击切换固定 80pt ↔ 自适应。
+- **Dock 行为修复**：补齐 `applicationShouldHandleReopen` / `applicationDidBecomeActive` 兜底。之前关闭主窗口后点 Dock 图标只出现菜单栏、窗口不再出现、菜单项也不响应（因为 `applicationDidFinishLaunching` 卡在 auto-layout 求解循环里 —— 同时修复了 `makeThemeSection` / `makePathsSection` 里 row↔section 的 leading/trailing 约束与 stack view 内部约束冲突的问题）。
+
+### 设计变更
+
+- `Theme` 重构：去掉 `providerBezel` / `providerText` / `itemBackground`，新增 `barBackground: NSColor?` 表示整条 HUD 的背景色；默认深色主题 `barBackground = nil` 沿用系统 Touch Bar 黑底。
+- 新增 `NSColor(hex:)` 便利构造器，所有自定义主题颜色用 `#RRGGBB` 字符串声明。
+- `MainWindowController` 引入 `MainPanel` 状态机（`.sessions` / `.settings`），`settingsContainer` 固定宽度 600pt、居中。
+- `TouchBarController.makeHUDItem` 把所有 HUD item 收纳到单个 `.hud` custom Touch Bar item 里，外层 `NSStackView` 加圆角 + `masksToBounds = true` 让 `barBackground` 不会超出圆角。
+- 主窗口 `minSize` 设为 640×400，避免设置面板溢出。
+
 ## 0.0.6
 
 升级检测 + GitHub 入口 + 菜单栏。

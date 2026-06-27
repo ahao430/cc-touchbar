@@ -1,6 +1,8 @@
 import AppKit
 import Observation
 
+private enum MainPanel { case sessions, settings }
+
 @MainActor
 final class MainWindowController: NSWindowController {
 
@@ -12,7 +14,9 @@ final class MainWindowController: NSWindowController {
     private let tableView = NSTableView()
     private let headerView = NSStackView()
     private let footerView = NSStackView()
+    private let settingsContainer = NSStackView()
 
+    private var currentPanel: MainPanel = .sessions
     private var observerToken: Any?
 
     /// 路径覆盖变化后由 AppDelegate 重新跑诊断 + 刷 HUD
@@ -20,6 +24,9 @@ final class MainWindowController: NSWindowController {
 
     /// 主题切换后由 AppDelegate 把新主题推到 TouchBarController
     var onThemeChanged: (() -> Void)?
+
+    /// 重启 Touch Bar（DFR dismiss + 重新 make + present）
+    var onRestartTouchBar: (() -> Void)?
 
     init(state: AppState, sessions: SessionStore, bridge: CCSwitchBridge) {
         self.state = state
@@ -69,8 +76,17 @@ final class MainWindowController: NSWindowController {
         scrollView.hasVerticalScroller = true
         scrollView.translatesAutoresizingMaskIntoConstraints = false
 
+        // Settings panel
+        settingsContainer.orientation = .vertical
+        settingsContainer.alignment = .width
+        settingsContainer.spacing = 18
+        settingsContainer.edgeInsets = NSEdgeInsets(top: 20, left: 16, bottom: 20, right: 16)
+        settingsContainer.translatesAutoresizingMaskIntoConstraints = false
+        settingsContainer.isHidden = true
+
         contentView.addSubview(headerView)
         contentView.addSubview(scrollView)
+        contentView.addSubview(settingsContainer)
         contentView.addSubview(footerView)
 
         NSLayoutConstraint.activate([
@@ -83,12 +99,20 @@ final class MainWindowController: NSWindowController {
             scrollView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             scrollView.bottomAnchor.constraint(equalTo: footerView.topAnchor),
 
+            settingsContainer.topAnchor.constraint(equalTo: headerView.bottomAnchor),
+            settingsContainer.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
+            settingsContainer.widthAnchor.constraint(equalToConstant: 600),
+            settingsContainer.bottomAnchor.constraint(equalTo: footerView.topAnchor),
+
             footerView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             footerView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             footerView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
         ])
 
+        window?.minSize = NSSize(width: 640, height: 400)
+
         rebuildHeader()
+        rebuildSettings()
         rebuildFooter()
     }
 
@@ -106,36 +130,335 @@ final class MainWindowController: NSWindowController {
         observerToken = token
     }
 
+    // MARK: - Header
+
     private func rebuildHeader() {
         headerView.arrangedSubviews.forEach { $0.removeFromSuperview() }
 
-        let title = NSTextField(labelWithString: "cc-touchbar")
-        title.font = .systemFont(ofSize: 14, weight: .semibold)
+        switch currentPanel {
+        case .sessions:
+            let title = NSTextField(labelWithString: "cc-touchbar")
+            title.font = .systemFont(ofSize: 14, weight: .semibold)
 
-        let provider = makeChip(label: state?.providerName ?? "—", color: .systemBlue)
-        let model = makeChip(label: state?.defaultModel ?? "—", color: .systemPurple)
-        let source = makeChip(label: sourceLabel, color: .systemGray)
+            let provider = makeChip(label: state?.providerName ?? "—", color: .systemBlue)
+            let model = makeChip(label: state?.defaultModel ?? "—", color: .systemPurple)
+            let source = makeChip(label: sourceLabel, color: .systemGray)
 
-        headerView.addArrangedSubview(title)
-        headerView.addArrangedSubview(NSStackView.horizontalSpacer())
-        headerView.addArrangedSubview(provider)
-        headerView.addArrangedSubview(model)
-        headerView.addArrangedSubview(source)
-        headerView.addArrangedSubview(makeGitHubButton())
+            headerView.addArrangedSubview(title)
+            headerView.addArrangedSubview(NSStackView.horizontalSpacer())
+            headerView.addArrangedSubview(provider)
+            headerView.addArrangedSubview(model)
+            headerView.addArrangedSubview(source)
+            headerView.addArrangedSubview(makeGitHubButton())
+            headerView.addArrangedSubview(makeSettingsButton())
+
+        case .settings:
+            let backButton = NSButton(image: NSImage(systemSymbolName: "chevron.backward",
+                                                      accessibilityDescription: "返回")!,
+                                       target: self,
+                                       action: #selector(showSessionsPanel))
+            backButton.bezelStyle = .rounded
+            backButton.imagePosition = .imageOnly
+
+            let title = NSTextField(labelWithString: "设置")
+            title.font = .systemFont(ofSize: 14, weight: .semibold)
+
+            headerView.addArrangedSubview(backButton)
+            headerView.addArrangedSubview(title)
+            headerView.addArrangedSubview(NSStackView.horizontalSpacer())
+        }
     }
 
     private func makeGitHubButton() -> NSButton {
-        let button = NSButton(title: "GitHub", target: self, action: #selector(openGitHub))
+        let button = NSButton(title: "", target: self, action: #selector(openGitHub))
         button.bezelStyle = .rounded
-        button.image = NSImage(systemSymbolName: "chevron.left.forwardslash.chevron.right",
-                               accessibilityDescription: "GitHub")
-        button.imagePosition = .imageLeft
+        if let url = Bundle.main.url(forResource: "GitHubMark", withExtension: "png"),
+           let img = NSImage(contentsOf: url) {
+            img.isTemplate = true
+            img.size = NSSize(width: 16, height: 16)
+            button.image = img
+            button.imagePosition = .imageOnly
+            button.contentTintColor = .labelColor
+        } else {
+            button.title = "GitHub"
+        }
+        button.toolTip = "GitHub 仓库"
+        return button
+    }
+
+    private func makeSettingsButton() -> NSButton {
+        let button = NSButton(title: "", target: self, action: #selector(showSettingsPanel))
+        button.bezelStyle = .rounded
+        button.image = NSImage(systemSymbolName: "gearshape",
+                                accessibilityDescription: "设置")
+        button.imagePosition = .imageOnly
+        button.contentTintColor = .labelColor
+        button.toolTip = "设置"
         return button
     }
 
     @objc private func openGitHub() {
         NSWorkspace.shared.open(UpdateChecker.repositoryURL)
     }
+
+    @objc private func showSessionsPanel() {
+        currentPanel = .sessions
+        scrollView.isHidden = false
+        settingsContainer.isHidden = true
+        rebuildHeader()
+    }
+
+    @objc private func showSettingsPanel() {
+        currentPanel = .settings
+        scrollView.isHidden = true
+        settingsContainer.isHidden = false
+        rebuildSettings()
+        rebuildHeader()
+    }
+
+    // MARK: - Settings panel
+
+    private func rebuildSettings() {
+        settingsContainer.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        settingsContainer.addArrangedSubview(makeThemeSection())
+        settingsContainer.addArrangedSubview(makeDivider())
+        settingsContainer.addArrangedSubview(makePathsSection())
+    }
+
+    private func sectionTitle(_ text: String) -> NSTextField {
+        let f = NSTextField(labelWithString: text)
+        f.font = .systemFont(ofSize: 13, weight: .semibold)
+        f.alignment = .left
+        f.lineBreakMode = .byTruncatingTail
+        return f
+    }
+
+    private func sectionHint(_ text: String) -> NSTextField {
+        let f = NSTextField(labelWithString: text)
+        f.font = .systemFont(ofSize: 11, weight: .regular)
+        f.textColor = .secondaryLabelColor
+        f.alignment = .left
+        f.lineBreakMode = .byTruncatingTail
+        return f
+    }
+
+    private func makeDivider() -> NSView {
+        let line = NSBox()
+        line.boxType = .separator
+        return line
+    }
+
+    private func makeThemeSection() -> NSView {
+        let section = NSStackView()
+        section.orientation = .vertical
+        section.alignment = .leading
+        section.spacing = 8
+
+        section.addArrangedSubview(sectionTitle("Touch Bar 主题"))
+        section.addArrangedSubview(sectionHint("点击切换。按钮背景与文字颜色 = 该主题实际渲染效果。"))
+
+        let columns = 4
+        let currentThemeName = PreferenceStore.shared.themeName
+        var index = 0
+        while index < Theme.all.count {
+            let row = NSStackView()
+            row.orientation = .horizontal
+            row.spacing = 4
+            row.alignment = .centerY
+            row.heightAnchor.constraint(equalToConstant: 32).isActive = true
+
+            for _ in 0..<columns {
+                if index < Theme.all.count {
+                    let theme = Theme.all[index]
+                    let isActive = theme.name == currentThemeName
+                    let btn = makeThemePreviewButton(theme: theme, index: index, isActive: isActive)
+                    btn.widthAnchor.constraint(greaterThanOrEqualToConstant: 130).isActive = true
+                    row.addArrangedSubview(btn)
+                    index += 1
+                } else {
+                    let placeholder = NSView()
+                    placeholder.setContentHuggingPriority(.defaultLow, for: .horizontal)
+                    placeholder.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+                    row.addArrangedSubview(placeholder)
+                }
+            }
+            section.addArrangedSubview(row)
+        }
+        return section
+    }
+
+    private func makeThemePreviewButton(theme: Theme, index: Int, isActive: Bool) -> NSView {
+        let title = isActive ? "✓  \(theme.displayName)" : theme.displayName
+
+        let wrapper = NSView()
+        wrapper.wantsLayer = true
+        wrapper.layer?.cornerRadius = 6
+        wrapper.layer?.backgroundColor = (theme.barBackground ?? NSColor.black).cgColor
+        if isActive {
+            wrapper.layer?.borderWidth = 1.5
+            wrapper.layer?.borderColor = NSColor.controlAccentColor.cgColor
+        }
+
+        let button = NSButton(title: title, target: self, action: #selector(pickTheme(_:)))
+        button.tag = index
+        button.isBordered = false
+        button.translatesAutoresizingMaskIntoConstraints = false
+        let attrs: [NSAttributedString.Key: Any] = [
+            .foregroundColor: theme.secondaryText,
+            .font: NSFont.systemFont(ofSize: 11, weight: isActive ? .semibold : .regular)
+        ]
+        button.attributedTitle = NSAttributedString(string: title, attributes: attrs)
+
+        wrapper.addSubview(button)
+        NSLayoutConstraint.activate([
+            button.topAnchor.constraint(equalTo: wrapper.topAnchor, constant: 5),
+            button.bottomAnchor.constraint(equalTo: wrapper.bottomAnchor, constant: -5),
+            button.leadingAnchor.constraint(equalTo: wrapper.leadingAnchor, constant: 10),
+            button.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor, constant: -10),
+        ])
+        return wrapper
+    }
+
+    private func makePathsSection() -> NSView {
+        let section = NSStackView()
+        section.orientation = .vertical
+        section.alignment = .width
+        section.spacing = 8
+
+        let titleLabel = sectionTitle("路径")
+        section.addArrangedSubview(titleLabel)
+        let hintLabel = sectionHint("未手动指定时使用自动检测；手动路径优先。")
+        section.addArrangedSubview(hintLabel)
+
+        let claudeRow = makePathRow(
+            labelText: "Claude Code",
+            valueText: claudePathLabel,
+            pickAction: #selector(pickClaudeOverride),
+            clearAction: #selector(clearClaudeOverride),
+            canClear: PreferenceStore.shared.claudeBinOverride != nil
+        )
+        section.addArrangedSubview(claudeRow)
+
+        let ccRow = makePathRow(
+            labelText: "CC Switch DB",
+            valueText: ccSwitchPathLabel,
+            pickAction: #selector(pickCCSwitchOverride),
+            clearAction: #selector(clearCCSwitchOverride),
+            canClear: PreferenceStore.shared.ccSwitchDBOverride != nil
+        )
+        section.addArrangedSubview(ccRow)
+
+        return section
+    }
+
+    private func makePathRow(labelText: String,
+                              valueText: String,
+                              pickAction: Selector,
+                              clearAction: Selector,
+                              canClear: Bool) -> NSView {
+        let row = NSStackView()
+        row.orientation = .horizontal
+        row.spacing = 8
+        row.alignment = .top
+        row.edgeInsets = NSEdgeInsets(top: 4, left: 0, bottom: 4, right: 0)
+
+        let label = NSTextField(labelWithString: labelText)
+        label.font = .systemFont(ofSize: 12, weight: .medium)
+        label.widthAnchor.constraint(equalToConstant: 100).isActive = true
+        label.heightAnchor.constraint(equalToConstant: 16).isActive = true
+
+        let value = NSTextField(wrappingLabelWithString: valueText)
+        value.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        value.textColor = .secondaryLabelColor
+        value.isEditable = false
+        value.isSelectable = true
+        value.setContentHuggingPriority(.defaultLow, for: .horizontal)
+
+        let buttonsStack = NSStackView()
+        buttonsStack.orientation = .horizontal
+        buttonsStack.spacing = 6
+        buttonsStack.alignment = .centerY
+
+        let pickBtn = NSButton(title: "选择…", target: self, action: pickAction)
+        pickBtn.bezelStyle = .rounded
+
+        let clearBtn = NSButton(title: "清除", target: self, action: clearAction)
+        clearBtn.bezelStyle = .rounded
+        clearBtn.isEnabled = canClear
+
+        buttonsStack.addArrangedSubview(pickBtn)
+        buttonsStack.addArrangedSubview(clearBtn)
+
+        row.addArrangedSubview(label)
+        row.addArrangedSubview(value)
+        row.addArrangedSubview(buttonsStack)
+        return row
+    }
+
+    private var claudePathLabel: String {
+        let claude = ClaudeDetector.resolvedBinary()
+        let tag = PreferenceStore.shared.claudeBinOverride != nil ? "（手动）" : "（自动 - \(claude.source.rawValue)）"
+        if let p = claude.path { return "\(p) \(tag)" }
+        return "未找到 \(tag)"
+    }
+
+    private var ccSwitchPathLabel: String {
+        let cc = AppPathsResolver.resolvedCCSwitchDB()
+        let tag = PreferenceStore.shared.ccSwitchDBOverride != nil ? "（手动）" : "（自动 - \(cc.source.rawValue)）"
+        if let u = cc.url { return "\(u.path) \(tag)" }
+        return "未找到 \(tag)"
+    }
+
+    @objc private func pickTheme(_ sender: NSButton) {
+        let i = sender.tag
+        if i >= 0 && i < Theme.all.count {
+            PreferenceStore.shared.themeName = Theme.all[i].name
+            onThemeChanged?()
+            rebuildSettings()
+        }
+    }
+
+    @objc private func pickClaudeOverride() {
+        let panel = NSOpenPanel()
+        panel.title = "选择 claude 可执行文件"
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.directoryURL = URL(fileURLWithPath: "/usr/local/bin")
+        if panel.runModal() == .OK, let url = panel.url {
+            PreferenceStore.shared.claudeBinOverride = url.path
+            onPathsChanged?()
+            rebuildSettings()
+        }
+    }
+
+    @objc private func pickCCSwitchOverride() {
+        let panel = NSOpenPanel()
+        panel.title = "选择 cc-switch.db"
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.directoryURL = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".cc-switch")
+        if panel.runModal() == .OK, let url = panel.url {
+            PreferenceStore.shared.ccSwitchDBOverride = url.path
+            onPathsChanged?()
+            rebuildSettings()
+        }
+    }
+
+    @objc private func clearClaudeOverride() {
+        PreferenceStore.shared.claudeBinOverride = nil
+        onPathsChanged?()
+        rebuildSettings()
+    }
+
+    @objc private func clearCCSwitchOverride() {
+        PreferenceStore.shared.ccSwitchDBOverride = nil
+        onPathsChanged?()
+        rebuildSettings()
+    }
+
+    // MARK: - Footer
 
     private func rebuildFooter() {
         footerView.arrangedSubviews.forEach { $0.removeFromSuperview() }
@@ -144,24 +467,24 @@ final class MainWindowController: NSWindowController {
         installButton.bezelStyle = .rounded
         installButton.keyEquivalent = ""
 
-        let pathButton = NSButton(title: "路径…", target: self, action: #selector(showPaths))
-        pathButton.bezelStyle = .rounded
-
-        let themeButton = NSButton(title: "主题…", target: self, action: #selector(showThemes))
-        themeButton.bezelStyle = .rounded
-
         let diagButton = NSButton(title: "诊断", target: self, action: #selector(showDiagnostics))
         diagButton.bezelStyle = .rounded
 
-        let reloadButton = NSButton(title: "重新加载", target: self, action: #selector(reloadAll))
+        let reloadButton = NSButton(title: "刷新", target: self, action: #selector(reloadAll))
         reloadButton.bezelStyle = .rounded
 
+        let restartButton = NSButton(title: "重启 Touch Bar", target: self, action: #selector(restartTouchBar))
+        restartButton.bezelStyle = .rounded
+
         footerView.addArrangedSubview(installButton)
-        footerView.addArrangedSubview(pathButton)
-        footerView.addArrangedSubview(themeButton)
         footerView.addArrangedSubview(diagButton)
+        footerView.addArrangedSubview(restartButton)
         footerView.addArrangedSubview(NSStackView.horizontalSpacer())
         footerView.addArrangedSubview(reloadButton)
+    }
+
+    @objc private func restartTouchBar() {
+        onRestartTouchBar?()
     }
 
     private func makeChip(label: String, color: NSColor) -> NSView {
@@ -230,99 +553,6 @@ final class MainWindowController: NSWindowController {
         alert.alertStyle = .informational
         alert.addButton(withTitle: "OK")
         alert.runModal()
-    }
-
-    @objc private func showThemes() {
-        let current = PreferenceStore.shared.themeName
-        let alert = NSAlert()
-        alert.messageText = "Touch Bar 主题"
-        alert.informativeText = "当前：\(Theme.current().displayName)\n黑底 → 白字；浅色主题会给每个 item 加白底，便于显示深色文字。"
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "关闭")
-        for theme in Theme.all {
-            let btn = alert.addButton(withTitle: "切换到\(theme.displayName)")
-            btn.tag = 0
-            _ = btn
-        }
-        let resp = alert.runModal()
-        let firstThemeBtn = NSApplication.ModalResponse.alertSecondButtonReturn.rawValue
-        let index = resp.rawValue - firstThemeBtn
-        if index >= 0 && index < Theme.all.count {
-            let picked = Theme.all[index]
-            PreferenceStore.shared.themeName = picked.name
-            onThemeChanged?()
-        }
-    }
-
-    @objc private func showPaths() {
-        let claude = ClaudeDetector.resolvedBinary()
-        let cc = AppPathsResolver.resolvedCCSwitchDB()
-
-        let claudeLine: String = {
-            if let p = claude.path {
-                let tag = PreferenceStore.shared.claudeBinOverride != nil ? "（手动）" : "（自动 - \(claude.source.rawValue)）"
-                return "Claude Code: \(p) \(tag)"
-            }
-            return "Claude Code: 未找到（自动 - \(claude.source.rawValue)）"
-        }()
-        let ccLine: String = {
-            if let u = cc.url {
-                let tag = PreferenceStore.shared.ccSwitchDBOverride != nil ? "（手动）" : "（自动 - \(cc.source.rawValue)）"
-                return "CC Switch DB: \(u.path) \(tag)"
-            }
-            return "CC Switch DB: 未找到（自动 - \(cc.source.rawValue)）"
-        }()
-
-        let alert = NSAlert()
-        alert.messageText = "路径设置"
-        alert.informativeText = "\(claudeLine)\n\(ccLine)"
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "关闭")
-        alert.addButton(withTitle: "选择 Claude…")
-        alert.addButton(withTitle: "选择 CC Switch DB…")
-        alert.addButton(withTitle: "清除所有覆盖")
-        let resp = alert.runModal()
-        switch resp.rawValue {
-        case NSApplication.ModalResponse.alertSecondButtonReturn.rawValue:
-            pickClaudeOverride()
-        case NSApplication.ModalResponse.alertThirdButtonReturn.rawValue:
-            pickCCSwitchOverride()
-        case NSApplication.ModalResponse.alertThirdButtonReturn.rawValue + 1:
-            PreferenceStore.shared.claudeBinOverride = nil
-            PreferenceStore.shared.ccSwitchDBOverride = nil
-            onPathsChanged?()
-            showPaths()
-        default:
-            break
-        }
-    }
-
-    private func pickClaudeOverride() {
-        let panel = NSOpenPanel()
-        panel.title = "选择 claude 可执行文件"
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
-        panel.canChooseFiles = true
-        panel.directoryURL = URL(fileURLWithPath: "/usr/local/bin")
-        if panel.runModal() == .OK, let url = panel.url {
-            PreferenceStore.shared.claudeBinOverride = url.path
-            onPathsChanged?()
-            showPaths()
-        }
-    }
-
-    private func pickCCSwitchOverride() {
-        let panel = NSOpenPanel()
-        panel.title = "选择 cc-switch.db"
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
-        panel.canChooseFiles = true
-        panel.directoryURL = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".cc-switch")
-        if panel.runModal() == .OK, let url = panel.url {
-            PreferenceStore.shared.ccSwitchDBOverride = url.path
-            onPathsChanged?()
-            showPaths()
-        }
     }
 
     @objc private func reloadAll() {

@@ -97,6 +97,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         wc.onThemeChanged = { [weak self] in
             self?.applyTheme()
         }
+        wc.onRestartTouchBar = { [weak self] in
+            self?.restartTouchBar()
+        }
         mainWindowController = wc
 
         // 5. Touch Bar（DFR 系统级占用）
@@ -203,6 +206,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return false
     }
 
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            showMainWindow()
+        }
+        return true
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        if mainWindowController?.window?.isVisible != true {
+            showMainWindow()
+        }
+    }
+
     // MARK: - Boot diagnostics
 
     private func runBootDiagnostics() {
@@ -257,6 +273,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 主题变化后把新主题推到 Touch Bar
     func applyTheme() {
         touchBarController?.applyTheme(Theme.current())
+    }
+
+    /// 重启 Touch Bar
+    func restartTouchBar() {
+        touchBarController?.restart()
     }
 
     private func reloadSource() {
