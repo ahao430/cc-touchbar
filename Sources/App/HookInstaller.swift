@@ -16,7 +16,6 @@ enum HookInstaller {
         "UserPromptSubmit",
         "PreToolUse",
         "PostToolUse",
-        "MessageDisplay",
         "Stop",
         "SubagentStop",
         "SessionEnd"

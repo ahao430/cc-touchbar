@@ -2,6 +2,16 @@
 
 版本说明。tag 触发 GitHub Actions 自动构建未签名 zip 并发布到 GitHub Releases。
 
+## 0.0.9
+
+修复：移除 Claude Code 不存在的 hook 事件 `MessageDisplay`。
+
+### Bug 修复
+
+- `HookInstaller.eventsToRegister` 里包含 `MessageDisplay`，但 Claude Code 实际没有这个事件（合法事件列表：PreToolUse / PostToolUse / Notification / UserPromptSubmit / SessionStart / SessionEnd / Stop / SubagentStop 等）。每次 Claude Code 启动都会跳过该 block 并打印警告。
+- 同步移除 `SessionStore.statusFor(event:)` 里对应的 dead case（永远不会触发）。
+- 用户已安装的 `~/.claude/settings.json` 里的 stale block 需手动删除，新版安装不会再写入。
+
 ## 0.0.8
 
 可配轮询间隔 + 设置面板交互细化 + 主窗口 padding。

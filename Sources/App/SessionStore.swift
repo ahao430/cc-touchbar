@@ -99,7 +99,6 @@ final class SessionStore {
         case "UserPromptSubmit": return .thinking
         case "PreToolUse": return .thinking
         case "PostToolUse": return .streaming
-        case "MessageDisplay": return .streaming
         case "Stop", "SubagentStop": return .idle
         case "SessionEnd": return .stopped
         default: return .idle
