@@ -2,6 +2,17 @@
 
 版本说明。tag 触发 GitHub Actions 自动构建未签名 zip 并发布到 GitHub Releases。
 
+## 0.0.10
+
+新增：订阅类型（如智谱 Token Plan）百分比显示口径可切换。
+
+### 功能
+
+- 设置面板新增「订阅百分比显示」section：NSSegmentedControl 在「剩余百分比 / 已用百分比」之间切换，默认剩余。
+- `PreferenceStore` 新增 `subscriptionPercentMode` 持久化字段（`cc.touchbar.subscriptionPercentMode`）。
+- `CCSwitchBridge.queryZhipuTokenPlan` 读取该配置后计算显示值：`remaining` → `100 - rawPercent`，`used` → `rawPercent`。距离下次刷新的剩余时间字符串不变。
+- 切换口径后通过 `onSubscriptionPercentModeChanged` 回调触发 `bridge.reload()` 立即刷新 HUD，无需等下一个轮询周期。
+
 ## 0.0.9
 
 修复：移除 Claude Code 不存在的 hook 事件 `MessageDisplay`。

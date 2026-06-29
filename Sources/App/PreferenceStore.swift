@@ -16,6 +16,13 @@ final class PreferenceStore {
         case ccSwitchDBOverride = "cc.touchbar.ccSwitchDB.override"
         case pollIntervalSeconds = "cc.touchbar.pollInterval"
         case balanceIntervalSeconds = "cc.touchbar.balanceInterval"
+        case subscriptionPercentMode = "cc.touchbar.subscriptionPercentMode"
+    }
+
+    /// 订阅类型百分比显示口径
+    enum SubscriptionPercentMode: String {
+        case remaining
+        case used
     }
 
     var hooksInstalled: Bool {
@@ -70,6 +77,18 @@ final class PreferenceStore {
             return v > 0 ? min(max(v, 5), 3600) : 30
         }
         set { defaults.set(min(max(newValue, 5), 3600), forKey: Key.balanceIntervalSeconds.rawValue) }
+    }
+
+    /// 订阅类型（如智谱 Token Plan）的百分比显示口径，默认 remaining
+    var subscriptionPercentMode: SubscriptionPercentMode {
+        get {
+            guard let raw = defaults.string(forKey: Key.subscriptionPercentMode.rawValue),
+                  let mode = SubscriptionPercentMode(rawValue: raw) else {
+                return .remaining
+            }
+            return mode
+        }
+        set { defaults.set(newValue.rawValue, forKey: Key.subscriptionPercentMode.rawValue) }
     }
 
     var dispatcherURL: URL {

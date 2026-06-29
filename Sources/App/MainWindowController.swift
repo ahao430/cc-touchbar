@@ -37,6 +37,9 @@ final class MainWindowController: NSWindowController {
     /// 轮询间隔变化后由 AppDelegate 重建 transcript / 余额定时器
     var onIntervalsChanged: (() -> Void)?
 
+    /// 订阅百分比口径变化后由 AppDelegate 重新拉取并刷新 HUD
+    var onSubscriptionPercentModeChanged: (() -> Void)?
+
     init(state: AppState, sessions: SessionStore, bridge: CCSwitchBridge) {
         self.state = state
         self.sessions = sessions
@@ -234,6 +237,8 @@ final class MainWindowController: NSWindowController {
         settingsContainer.addArrangedSubview(makePathsSection())
         settingsContainer.addArrangedSubview(makeDivider())
         settingsContainer.addArrangedSubview(makeIntervalsSection())
+        settingsContainer.addArrangedSubview(makeDivider())
+        settingsContainer.addArrangedSubview(makeSubscriptionSection())
     }
 
     private func sectionTitle(_ text: String) -> NSTextField {
@@ -510,6 +515,38 @@ final class MainWindowController: NSWindowController {
         row.addArrangedSubview(stepper)
         row.addArrangedSubview(applyBtn)
         return (row, field, stepper)
+    }
+
+    private func makeSubscriptionSection() -> NSView {
+        let section = NSStackView()
+        section.orientation = .vertical
+        section.alignment = .leading
+        section.spacing = 8
+
+        section.addArrangedSubview(sectionTitle("订阅百分比显示"))
+        section.addArrangedSubview(sectionHint("订阅类型（如智谱 Token Plan）的百分比显示口径。默认剩余百分比。"))
+
+        let row = NSStackView()
+        row.orientation = .horizontal
+        row.spacing = 8
+        row.alignment = .centerY
+        row.edgeInsets = NSEdgeInsets(top: 4, left: 0, bottom: 4, right: 0)
+
+        let label = NSTextField(labelWithString: "百分比口径")
+        label.font = .systemFont(ofSize: 12, weight: .medium)
+
+        let seg = NSSegmentedControl(labels: ["剩余百分比", "已用百分比"], trackingMode: .selectOne, target: self, action: #selector(subscriptionPercentModeChanged(_:)))
+        seg.selectedSegment = PreferenceStore.shared.subscriptionPercentMode == .remaining ? 0 : 1
+
+        row.addArrangedSubview(label)
+        row.addArrangedSubview(seg)
+        section.addArrangedSubview(row)
+        return section
+    }
+
+    @objc private func subscriptionPercentModeChanged(_ sender: NSSegmentedControl) {
+        PreferenceStore.shared.subscriptionPercentMode = sender.selectedSegment == 0 ? .remaining : .used
+        onSubscriptionPercentModeChanged?()
     }
 
     @objc private func pickTheme(_ sender: NSButton) {

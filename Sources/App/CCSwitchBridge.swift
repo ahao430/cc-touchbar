@@ -148,8 +148,10 @@ final class CCSwitchBridge {
             let tokenLimits = limits.filter { ($0["type"] as? String) == "TOKENS_LIMIT" }
             let fiveHour = tokenLimits.first { parseInt($0["unit"]) == 3 } ?? tokenLimits.first
             guard let item = fiveHour,
-                  let used = parseDouble(item["percentage"]) else { continue }
-            var text = "5h \(formatPercent(used))%"
+                  let rawPercent = parseDouble(item["percentage"]) else { continue }
+            let mode = await PreferenceStore.shared.subscriptionPercentMode
+            let displayPercent = mode == .remaining ? (100 - rawPercent) : rawPercent
+            var text = "5h \(formatPercent(displayPercent))%"
             if let resetMs = parseDouble(item["nextResetTime"]) {
                 let remaining = resetMs / 1000 - Date().timeIntervalSince1970
                 if remaining > 0 {

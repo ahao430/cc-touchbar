@@ -101,6 +101,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         wc.onIntervalsChanged = { [weak self] in
             self?.reapplyIntervals()
         }
+        wc.onSubscriptionPercentModeChanged = { [weak self] in
+            self?.bridge.reload()
+        }
         mainWindowController = wc
 
         // 5. Touch Bar（DFR 系统级占用）
