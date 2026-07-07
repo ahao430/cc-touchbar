@@ -65,9 +65,13 @@
 | 最近活动 | `session.lastActivityAt` 相对时间 | "刚刚 / 12 分钟前"，每秒刷新 |
 | Activate 按钮 | 触发窗口激活 | 行点击等效 |
 
-### 3. 底部状态栏
+### 3. 底部操作栏
 
-- 打开 cc switch（按钮，仅 L3）
+- 安装 / 卸载 Hook 监听
+- 诊断
+- 重启 Touch Bar
+- 检查更新（调用 GitHub Releases 更新检测）
+- 设置面板中显示「保存并应用设置」（位于「刷新」左侧，用于统一应用主题与背景设置）
 - 刷新（按钮，强制 Poller.tick）
 - App 自身状态：`ready / refreshing / error`
 - 上次刷新时间

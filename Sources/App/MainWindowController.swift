@@ -14,6 +14,8 @@ final class MainWindowController: NSWindowController {
     private let tableView = NSTableView()
     private let headerView = NSStackView()
     private let footerView = NSStackView()
+    private let settingsScrollView = NSScrollView()
+    private let settingsContentView = NSView()
     private let settingsContainer = NSStackView()
 
     private var currentPanel: MainPanel = .sessions
@@ -24,6 +26,24 @@ final class MainWindowController: NSWindowController {
     private weak var pollIntervalStepper: NSStepper?
     private weak var balanceIntervalField: NSTextField?
     private weak var balanceIntervalStepper: NSStepper?
+    private weak var backgroundOpacitySlider: NSSlider?
+    private weak var backgroundBlurSlider: NSSlider?
+    private weak var backgroundCropXSlider: NSSlider?
+    private weak var backgroundCropYSlider: NSSlider?
+    private weak var backgroundCropZoomSlider: NSSlider?
+    private weak var backgroundOpacityValueLabel: NSTextField?
+    private weak var backgroundBlurValueLabel: NSTextField?
+    private weak var backgroundCropXValueLabel: NSTextField?
+    private weak var backgroundCropYValueLabel: NSTextField?
+    private weak var backgroundCropZoomValueLabel: NSTextField?
+    private weak var backgroundPreviewView: NSView?
+    private weak var backgroundPreviewLabel: NSTextField?
+    private var themePreviewButtons: [NSButton] = []
+    private var themePreviewWrappers: [NSView] = []
+    private var cachedPreviewKey: String?
+    private var cachedPreviewImage: CGImage?
+    private static let ciContext = CIContext()
+    private static let touchBarAspect: CGFloat = 1085.0 / 30.0
 
     /// 路径覆盖变化后由 AppDelegate 重新跑诊断 + 刷 HUD
     var onPathsChanged: (() -> Void)?
@@ -89,16 +109,25 @@ final class MainWindowController: NSWindowController {
         scrollView.translatesAutoresizingMaskIntoConstraints = false
 
         // Settings panel
+        settingsScrollView.documentView = settingsContentView
+        settingsScrollView.hasVerticalScroller = true
+        settingsScrollView.autohidesScrollers = false
+        settingsScrollView.translatesAutoresizingMaskIntoConstraints = false
+        settingsScrollView.isHidden = true
+
+        settingsContentView.translatesAutoresizingMaskIntoConstraints = false
+
         settingsContainer.orientation = .vertical
-        settingsContainer.alignment = .width
+        settingsContainer.alignment = .leading
         settingsContainer.spacing = 18
-        settingsContainer.edgeInsets = NSEdgeInsets(top: 20, left: 16, bottom: 20, right: 16)
+        settingsContainer.edgeInsets = NSEdgeInsets(top: 20, left: 0, bottom: 20, right: 0)
         settingsContainer.translatesAutoresizingMaskIntoConstraints = false
-        settingsContainer.isHidden = true
+
+        settingsContentView.addSubview(settingsContainer)
 
         contentView.addSubview(headerView)
         contentView.addSubview(scrollView)
-        contentView.addSubview(settingsContainer)
+        contentView.addSubview(settingsScrollView)
         contentView.addSubview(footerView)
 
         NSLayoutConstraint.activate([
@@ -111,19 +140,29 @@ final class MainWindowController: NSWindowController {
             scrollView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             scrollView.bottomAnchor.constraint(equalTo: footerView.topAnchor),
 
-            settingsContainer.topAnchor.constraint(equalTo: headerView.bottomAnchor),
-            settingsContainer.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
+            settingsScrollView.topAnchor.constraint(equalTo: headerView.bottomAnchor),
+            settingsScrollView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            settingsScrollView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            settingsScrollView.bottomAnchor.constraint(equalTo: footerView.topAnchor),
+
+            settingsContentView.leadingAnchor.constraint(equalTo: settingsScrollView.contentView.leadingAnchor),
+            settingsContentView.topAnchor.constraint(equalTo: settingsScrollView.contentView.topAnchor),
+            settingsContentView.widthAnchor.constraint(equalTo: settingsScrollView.contentView.widthAnchor),
+            settingsContentView.bottomAnchor.constraint(equalTo: settingsContainer.bottomAnchor, constant: 20),
+
+            settingsContainer.topAnchor.constraint(equalTo: settingsContentView.topAnchor),
+            settingsContainer.leadingAnchor.constraint(equalTo: settingsContentView.leadingAnchor, constant: 16),
             settingsContainer.widthAnchor.constraint(equalToConstant: 600),
-            settingsContainer.bottomAnchor.constraint(equalTo: footerView.topAnchor),
 
             footerView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             footerView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             footerView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -12)
         ])
 
-        window?.minSize = NSSize(width: 640, height: 400)
+        window?.minSize = NSSize(width: 640, height: 260)
 
         rebuildHeader()
+        rebuildFooter()
         rebuildSettings()
         rebuildFooter()
     }
@@ -216,16 +255,18 @@ final class MainWindowController: NSWindowController {
     @objc private func showSessionsPanel() {
         currentPanel = .sessions
         scrollView.isHidden = false
-        settingsContainer.isHidden = true
+        settingsScrollView.isHidden = true
         rebuildHeader()
+        rebuildFooter()
     }
 
     @objc private func showSettingsPanel() {
         currentPanel = .settings
         scrollView.isHidden = true
-        settingsContainer.isHidden = false
+        settingsScrollView.isHidden = false
         rebuildSettings()
         rebuildHeader()
+        rebuildFooter()
     }
 
     // MARK: - Settings panel
@@ -233,6 +274,8 @@ final class MainWindowController: NSWindowController {
     private func rebuildSettings() {
         settingsContainer.arrangedSubviews.forEach { $0.removeFromSuperview() }
         settingsContainer.addArrangedSubview(makeThemeSection())
+        settingsContainer.addArrangedSubview(makeDivider())
+        settingsContainer.addArrangedSubview(makeBackgroundSection())
         settingsContainer.addArrangedSubview(makeDivider())
         settingsContainer.addArrangedSubview(makePathsSection())
         settingsContainer.addArrangedSubview(makeDivider())
@@ -271,8 +314,10 @@ final class MainWindowController: NSWindowController {
         section.spacing = 8
 
         section.addArrangedSubview(sectionTitle("Touch Bar 主题"))
-        section.addArrangedSubview(sectionHint("点击切换。按钮背景与文字颜色 = 该主题实际渲染效果。"))
+        section.addArrangedSubview(sectionHint("点击选择主题，保存后应用到 Touch Bar。按钮背景与文字颜色 = 该主题实际渲染效果。"))
 
+        themePreviewButtons.removeAll()
+        themePreviewWrappers.removeAll()
         let columns = 4
         let currentThemeName = PreferenceStore.shared.themeName
         var index = 0
@@ -300,6 +345,7 @@ final class MainWindowController: NSWindowController {
             }
             section.addArrangedSubview(row)
         }
+
         return section
     }
 
@@ -326,6 +372,8 @@ final class MainWindowController: NSWindowController {
         button.attributedTitle = NSAttributedString(string: title, attributes: attrs)
 
         wrapper.addSubview(button)
+        themePreviewWrappers.append(wrapper)
+        themePreviewButtons.append(button)
         NSLayoutConstraint.activate([
             button.topAnchor.constraint(equalTo: wrapper.topAnchor, constant: 5),
             button.bottomAnchor.constraint(equalTo: wrapper.bottomAnchor, constant: -5),
@@ -333,6 +381,180 @@ final class MainWindowController: NSWindowController {
             button.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor, constant: -10),
         ])
         return wrapper
+    }
+
+    private func makeBackgroundSection() -> NSView {
+        let section = NSStackView()
+        section.orientation = .vertical
+        section.alignment = .leading
+        section.spacing = 8
+
+        section.addArrangedSubview(sectionTitle("Touch Bar 背景图"))
+        section.addArrangedSubview(sectionHint("可选。图片会铺满 HUD 背景；文字颜色仍跟随当前主题。"))
+
+        let row = makePathRow(
+            labelText: "背景图",
+            valueText: touchBarBackgroundImageLabel,
+            pickAction: #selector(pickTouchBarBackgroundImage),
+            clearAction: #selector(clearTouchBarBackgroundImage),
+            canClear: PreferenceStore.shared.touchBarBackgroundImagePath != nil
+        )
+        section.addArrangedSubview(row)
+        section.addArrangedSubview(makeBackgroundPreview())
+
+        let opacityRow = makeBackgroundSliderRow(labelText: "不透明度", value: PreferenceStore.shared.touchBarBackgroundOpacity, min: 0, max: 1, action: #selector(backgroundSliderChanged(_:)))
+        backgroundOpacitySlider = opacityRow.slider
+        backgroundOpacityValueLabel = opacityRow.valueLabel
+        section.addArrangedSubview(opacityRow.view)
+
+        let blurRow = makeBackgroundSliderRow(labelText: "模糊像素", value: PreferenceStore.shared.touchBarBackgroundBlurRadius, min: 0, max: 30, action: #selector(backgroundSliderChanged(_:)))
+        backgroundBlurSlider = blurRow.slider
+        backgroundBlurValueLabel = blurRow.valueLabel
+        section.addArrangedSubview(blurRow.view)
+
+        let cropXRow = makeBackgroundSliderRow(labelText: "区域左右", value: PreferenceStore.shared.touchBarBackgroundCropX, min: 0, max: 1, action: #selector(backgroundSliderChanged(_:)))
+        backgroundCropXSlider = cropXRow.slider
+        backgroundCropXValueLabel = cropXRow.valueLabel
+        section.addArrangedSubview(cropXRow.view)
+
+        let cropYRow = makeBackgroundSliderRow(labelText: "区域上下", value: PreferenceStore.shared.touchBarBackgroundCropY, min: 0, max: 1, action: #selector(backgroundSliderChanged(_:)))
+        backgroundCropYSlider = cropYRow.slider
+        backgroundCropYValueLabel = cropYRow.valueLabel
+        section.addArrangedSubview(cropYRow.view)
+
+        let zoomRow = makeBackgroundSliderRow(labelText: "区域缩放", value: PreferenceStore.shared.touchBarBackgroundCropZoom, min: 1, max: 5, action: #selector(backgroundSliderChanged(_:)))
+        backgroundCropZoomSlider = zoomRow.slider
+        backgroundCropZoomValueLabel = zoomRow.valueLabel
+        section.addArrangedSubview(zoomRow.view)
+
+        return section
+    }
+
+    private var touchBarBackgroundImageLabel: String {
+        PreferenceStore.shared.touchBarBackgroundImagePath ?? "未设置（使用主题背景色）"
+    }
+
+    private func makeBackgroundPreview() -> NSView {
+        let preview = NSView()
+        preview.wantsLayer = true
+        preview.layer?.cornerRadius = 8
+        preview.layer?.masksToBounds = true
+        preview.heightAnchor.constraint(equalToConstant: 44).isActive = true
+        backgroundPreviewView = preview
+        updateBackgroundPreview()
+
+        let label = NSTextField(labelWithString: "Touch Bar 背景预览")
+        label.font = .monospacedSystemFont(ofSize: 12, weight: .semibold)
+        label.translatesAutoresizingMaskIntoConstraints = false
+        preview.addSubview(label)
+        backgroundPreviewLabel = label
+        updateBackgroundPreviewLabel()
+        NSLayoutConstraint.activate([
+            label.centerXAnchor.constraint(equalTo: preview.centerXAnchor),
+            label.centerYAnchor.constraint(equalTo: preview.centerYAnchor)
+        ])
+        return preview
+    }
+
+    private func updateBackgroundPreview() {
+        guard let layer = backgroundPreviewView?.layer else { return }
+        layer.backgroundColor = Theme.current().barBackground?.cgColor
+        layer.contents = nil
+        layer.contentsRect = CGRect(x: 0, y: 0, width: 1, height: 1)
+        if let path = PreferenceStore.shared.touchBarBackgroundImagePath,
+           let image = processedBackgroundImage(from: path) {
+            layer.contents = image
+            layer.contentsGravity = .resizeAspectFill
+            layer.contentsRect = backgroundContentsRect(for: image)
+        }
+        updateBackgroundPreviewLabel()
+    }
+
+    private func updateBackgroundPreviewLabel() {
+        backgroundPreviewLabel?.textColor = Theme.current().primaryText
+    }
+
+    private func backgroundContentsRect(for image: CGImage) -> CGRect {
+        let imageAspect = CGFloat(image.width) / CGFloat(image.height)
+        let targetAspect = Self.touchBarAspect
+        let baseWidth: CGFloat
+        let baseHeight: CGFloat
+        if imageAspect > targetAspect {
+            baseHeight = 1
+            baseWidth = targetAspect / imageAspect
+        } else {
+            baseWidth = 1
+            baseHeight = imageAspect / targetAspect
+        }
+        let zoom = CGFloat(PreferenceStore.shared.touchBarBackgroundCropZoom)
+        let width = baseWidth / zoom
+        let height = baseHeight / zoom
+        let x = CGFloat(PreferenceStore.shared.touchBarBackgroundCropX) * (1 - width)
+        let y = CGFloat(PreferenceStore.shared.touchBarBackgroundCropY) * (1 - height)
+        return CGRect(x: x, y: y, width: width, height: height)
+    }
+
+    private func processedBackgroundImage(from path: String) -> CGImage? {
+        let key = "\(path)|\(PreferenceStore.shared.touchBarBackgroundBlurRadius)|\(PreferenceStore.shared.touchBarBackgroundOpacity)"
+        if cachedPreviewKey == key, let cachedPreviewImage {
+            return cachedPreviewImage
+        }
+        guard let image = NSImage(contentsOfFile: path),
+              let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        let ciImage = CIImage(cgImage: cgImage)
+        let blur = PreferenceStore.shared.touchBarBackgroundBlurRadius
+        let output: CIImage
+        if blur > 0,
+           let blurFilter = CIFilter(name: "CIGaussianBlur"),
+           let cropFilter = CIFilter(name: "CICrop") {
+            blurFilter.setValue(ciImage, forKey: kCIInputImageKey)
+            blurFilter.setValue(blur, forKey: kCIInputRadiusKey)
+            cropFilter.setValue(blurFilter.outputImage, forKey: kCIInputImageKey)
+            cropFilter.setValue(CIVector(cgRect: ciImage.extent), forKey: "inputRectangle")
+            output = cropFilter.outputImage ?? ciImage
+        } else {
+            output = ciImage
+        }
+        guard let alphaFilter = CIFilter(name: "CIColorMatrix") else { return cgImage }
+        alphaFilter.setValue(output, forKey: kCIInputImageKey)
+        alphaFilter.setValue(CIVector(x: 0, y: 0, z: 0, w: PreferenceStore.shared.touchBarBackgroundOpacity), forKey: "inputAVector")
+        let processed = Self.ciContext.createCGImage(alphaFilter.outputImage ?? output, from: ciImage.extent) ?? cgImage
+        cachedPreviewKey = key
+        cachedPreviewImage = processed
+        return processed
+    }
+
+    private func makeBackgroundSliderRow(labelText: String,
+                                         value: Double,
+                                         min: Double,
+                                         max: Double,
+                                         action: Selector) -> (view: NSView, slider: NSSlider, valueLabel: NSTextField) {
+        let row = NSStackView()
+        row.orientation = .horizontal
+        row.spacing = 8
+        row.alignment = .centerY
+        row.edgeInsets = NSEdgeInsets(top: 2, left: 0, bottom: 2, right: 0)
+
+        let label = NSTextField(labelWithString: labelText)
+        label.font = .systemFont(ofSize: 12, weight: .medium)
+        label.widthAnchor.constraint(equalToConstant: 100).isActive = true
+
+        let slider = NSSlider(value: value, minValue: min, maxValue: max, target: self, action: action)
+        slider.widthAnchor.constraint(equalToConstant: 260).isActive = true
+
+        let valueLabel = NSTextField(labelWithString: formatBackgroundSliderValue(labelText: labelText, value: value))
+        valueLabel.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        valueLabel.textColor = .secondaryLabelColor
+        valueLabel.widthAnchor.constraint(equalToConstant: 44).isActive = true
+
+        row.addArrangedSubview(label)
+        row.addArrangedSubview(slider)
+        row.addArrangedSubview(valueLabel)
+        return (row, slider, valueLabel)
+    }
+
+    private func formatBackgroundSliderValue(labelText: String, value: Double) -> String {
+        String(format: labelText == "模糊像素" ? "%.0f" : "%.2f", value)
     }
 
     private func makePathsSection() -> NSView {
@@ -544,6 +766,11 @@ final class MainWindowController: NSWindowController {
         return section
     }
 
+
+    @objc private func applySettings() {
+        onThemeChanged?()
+    }
+
     @objc private func subscriptionPercentModeChanged(_ sender: NSSegmentedControl) {
         PreferenceStore.shared.subscriptionPercentMode = sender.selectedSegment == 0 ? .remaining : .used
         onSubscriptionPercentModeChanged?()
@@ -553,9 +780,71 @@ final class MainWindowController: NSWindowController {
         let i = sender.tag
         if i >= 0 && i < Theme.all.count {
             PreferenceStore.shared.themeName = Theme.all[i].name
-            onThemeChanged?()
+            updateThemeSelection()
+            updateBackgroundPreview()
+        }
+    }
+
+    private func updateThemeSelection() {
+        let currentThemeName = PreferenceStore.shared.themeName
+        for (index, button) in themePreviewButtons.enumerated() {
+            guard index < Theme.all.count else { continue }
+            let theme = Theme.all[index]
+            let isActive = theme.name == currentThemeName
+            let title = isActive ? "✓  \(theme.displayName)" : theme.displayName
+            button.attributedTitle = NSAttributedString(string: title, attributes: [
+                .foregroundColor: theme.secondaryText,
+                .font: NSFont.systemFont(ofSize: 11, weight: isActive ? .semibold : .regular)
+            ])
+            let wrapper = themePreviewWrappers[index]
+            wrapper.layer?.borderWidth = isActive ? 1.5 : 0
+            wrapper.layer?.borderColor = isActive ? NSColor.controlAccentColor.cgColor : nil
+        }
+    }
+
+    @objc private func pickTouchBarBackgroundImage() {
+        let panel = NSOpenPanel()
+        panel.title = "选择 Touch Bar 背景图"
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowedContentTypes = [.image]
+        if panel.runModal() == .OK, let url = panel.url {
+            PreferenceStore.shared.touchBarBackgroundImagePath = url.path
+            PreferenceStore.shared.touchBarBackgroundCropX = 0.5
+            PreferenceStore.shared.touchBarBackgroundCropY = 0.5
+            PreferenceStore.shared.touchBarBackgroundCropZoom = 1
             rebuildSettings()
         }
+    }
+
+    @objc private func clearTouchBarBackgroundImage() {
+        PreferenceStore.shared.touchBarBackgroundImagePath = nil
+        rebuildSettings()
+    }
+
+    @objc private func backgroundSliderChanged(_ sender: NSSlider) {
+        if sender === backgroundOpacitySlider {
+            PreferenceStore.shared.touchBarBackgroundOpacity = sender.doubleValue
+            backgroundOpacityValueLabel?.stringValue = formatBackgroundSliderValue(labelText: "不透明度", value: sender.doubleValue)
+            cachedPreviewKey = nil
+            cachedPreviewImage = nil
+        } else if sender === backgroundBlurSlider {
+            PreferenceStore.shared.touchBarBackgroundBlurRadius = sender.doubleValue
+            backgroundBlurValueLabel?.stringValue = formatBackgroundSliderValue(labelText: "模糊像素", value: sender.doubleValue)
+            cachedPreviewKey = nil
+            cachedPreviewImage = nil
+        } else if sender === backgroundCropXSlider {
+            PreferenceStore.shared.touchBarBackgroundCropX = sender.doubleValue
+            backgroundCropXValueLabel?.stringValue = formatBackgroundSliderValue(labelText: "区域左右", value: sender.doubleValue)
+        } else if sender === backgroundCropYSlider {
+            PreferenceStore.shared.touchBarBackgroundCropY = sender.doubleValue
+            backgroundCropYValueLabel?.stringValue = formatBackgroundSliderValue(labelText: "区域上下", value: sender.doubleValue)
+        } else if sender === backgroundCropZoomSlider {
+            PreferenceStore.shared.touchBarBackgroundCropZoom = sender.doubleValue
+            backgroundCropZoomValueLabel?.stringValue = formatBackgroundSliderValue(labelText: "区域缩放", value: sender.doubleValue)
+        }
+        updateBackgroundPreview()
     }
 
     @objc private func pickClaudeOverride() {
@@ -671,18 +960,59 @@ final class MainWindowController: NSWindowController {
         let reloadButton = NSButton(title: "刷新", target: self, action: #selector(reloadAll))
         reloadButton.bezelStyle = .rounded
 
+        let updateButton = NSButton(title: "检查更新", target: self, action: #selector(checkForUpdates))
+        updateButton.bezelStyle = .rounded
+
         let restartButton = NSButton(title: "重启 Touch Bar", target: self, action: #selector(restartTouchBar))
         restartButton.bezelStyle = .rounded
 
         footerView.addArrangedSubview(installButton)
         footerView.addArrangedSubview(diagButton)
         footerView.addArrangedSubview(restartButton)
+        footerView.addArrangedSubview(updateButton)
         footerView.addArrangedSubview(NSStackView.horizontalSpacer())
+        if currentPanel == .settings {
+            let applyButton = NSButton(title: "保存并应用设置", target: self, action: #selector(applySettings))
+            applyButton.bezelStyle = .rounded
+            footerView.addArrangedSubview(applyButton)
+        }
         footerView.addArrangedSubview(reloadButton)
     }
 
     @objc private func restartTouchBar() {
         onRestartTouchBar?()
+    }
+
+    @objc private func checkForUpdates() {
+        UpdateChecker.check { [weak self] result in
+            self?.presentUpdateResult(result)
+        }
+    }
+
+    private func presentUpdateResult(_ result: UpdateCheckResult) {
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        switch result {
+        case .upToDate(let current):
+            alert.messageText = "已是最新版本"
+            alert.informativeText = "当前版本 \(current)"
+            alert.addButton(withTitle: "关闭")
+        case .newVersionAvailable(let current, let latest, let url):
+            alert.messageText = "发现新版本 \(latest)"
+            alert.informativeText = "当前版本 \(current)，新版本 \(latest) 已发布。是否立即前往下载？"
+            alert.addButton(withTitle: "前往下载")
+            alert.addButton(withTitle: "稍后")
+            if alert.runModal() == .alertFirstButtonReturn {
+                NSWorkspace.shared.open(url)
+            }
+            return
+        case .error(let msg):
+            alert.messageText = "检查更新失败"
+            alert.informativeText = msg
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "关闭")
+        }
+        alert.runModal()
     }
 
     private func makeChip(label: String, color: NSColor) -> NSView {
@@ -758,6 +1088,7 @@ final class MainWindowController: NSWindowController {
             bridge?.reload()
             tableView.reloadData()
             rebuildHeader()
+        rebuildFooter()
         }
     }
 

@@ -16,10 +16,10 @@ Claude Code 的 Touch Bar HUD：在 MacBook Touch Bar 上显示当前 provider�
 - **三层数据源**：自动识别官方订阅 / 第三方 env vars / cc switch（详见 [数据源策略](docs/03-数据源策略.md)）
 - **DFR 常驻**：HUD 通过私有 DFR API 系统级呈现，Control Strip 里常驻 tray 图标，切到其它 app 也显示
 - **多会话追踪**：基于 Claude Code hooks 实时同步会话状态；主窗口列表支持点击激活对应终端
-- **主题**：内置 14 套主题（深色 / 浅色 / Nord / Dracula / Solarized / Tokyo Night / Gruvbox / Rosé Pine / Sunset / Ocean / Forest / Bubblegum / Synthwave / Crimson），整条 HUD 圆角背景层，主题预览直接渲染对应配色
-- **设置面板**：header 右上角齿轮按钮进入设置，主题以彩色色块平铺、路径覆盖内联编辑、Transcript / Git 分支检测与订阅余额刷新间隔可配（默认 5s / 30s）、订阅类型百分比口径可切换（剩余 / 已用，默认剩余），支持返回主面板
+- **主题与背景**：内置 14 套主题（深色 / 浅色 / Nord / Dracula / Solarized / Tokyo Night / Gruvbox / Rosé Pine / Sunset / Ocean / Forest / Bubblegum / Synthwave / Crimson），整条 HUD 圆角背景层；支持自定义 Touch Bar 背景图、长条区域裁剪、平移/缩放、不透明度与模糊调节，设置页实时预览
+- **设置面板**：header 右上角齿轮按钮进入设置，主题以彩色色块平铺、背景图与路径覆盖内联编辑、Transcript / Git 分支检测与订阅余额刷新间隔可配（默认 5s / 30s）、订阅类型百分比口径可切换（剩余 / 已用，默认剩余）；设置变更统一通过底部「保存并应用设置」推送到 Touch Bar
 - **诊断面板**：展示路径、数据源、hook 状态等，便于排障
-- **升级检测**：菜单栏「检查更新…」拉 GitHub Releases 最新版本号，发现新版本一键跳转下载；主窗口 GitHub 按钮直达仓库
+- **升级检测**：菜单栏和主窗口底部「检查更新」拉 GitHub Releases 最新版本号，发现新版本一键跳转下载；主窗口 GitHub 按钮直达仓库
 
 完整设计文档：**[docs/README.md](docs/README.md)**>
 

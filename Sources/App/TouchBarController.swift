@@ -4,6 +4,8 @@ import Observation
 @MainActor
 final class TouchBarController: NSObject, NSTouchBarDelegate {
 
+    private static let touchBarAspect: CGFloat = 1085.0 / 30.0
+
     private weak var state: AppState?
     private weak var sessions: SessionStore?
     private weak var bridge: CCSwitchBridge?
@@ -197,7 +199,7 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
         stack.edgeInsets = NSEdgeInsets(top: 4, left: 8, bottom: 4, right: 8)
         stack.alignment = .centerY
         stack.wantsLayer = true
-        stack.layer?.backgroundColor = theme.barBackground?.cgColor
+        applyBackground(to: stack)
         stack.layer?.cornerRadius = 8
         stack.layer?.masksToBounds = true
         self.hudContainer = stack
@@ -405,7 +407,9 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
     /// 主题切换：刷新 HUD 容器背景 + 各 view 文字颜色 + 分隔线颜色
     func applyTheme(_ theme: Theme) {
         self.theme = theme
-        hudContainer?.layer?.backgroundColor = theme.barBackground?.cgColor
+        if let hudContainer {
+            applyBackground(to: hudContainer)
+        }
         itemViews.forEach { applyTheme(toItemView: $0) }
         iconButtons.forEach { applyTheme(toIconButton: $0) }
         separatorViews.forEach { $0.layer?.backgroundColor = theme.separatorColor.cgColor }
@@ -414,6 +418,63 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
         }
         refreshModelTitle()
         refreshGitBranchTitle()
+    }
+
+    private func applyBackground(to view: NSView) {
+        guard let layer = view.layer else { return }
+        layer.backgroundColor = theme.barBackground?.cgColor
+        layer.contents = nil
+        layer.contentsGravity = .resizeAspectFill
+        if let path = PreferenceStore.shared.touchBarBackgroundImagePath,
+           let image = backgroundImage(from: path) {
+            layer.contents = image
+            layer.contentsRect = backgroundContentsRect(for: image)
+        } else {
+            layer.contentsRect = CGRect(x: 0, y: 0, width: 1, height: 1)
+        }
+    }
+
+    private func backgroundContentsRect(for image: CGImage) -> CGRect {
+        let imageAspect = CGFloat(image.width) / CGFloat(image.height)
+        let targetAspect = Self.touchBarAspect
+        let baseWidth: CGFloat
+        let baseHeight: CGFloat
+        if imageAspect > targetAspect {
+            baseHeight = 1
+            baseWidth = targetAspect / imageAspect
+        } else {
+            baseWidth = 1
+            baseHeight = imageAspect / targetAspect
+        }
+        let zoom = CGFloat(PreferenceStore.shared.touchBarBackgroundCropZoom)
+        let width = baseWidth / zoom
+        let height = baseHeight / zoom
+        let x = CGFloat(PreferenceStore.shared.touchBarBackgroundCropX) * (1 - width)
+        let y = CGFloat(PreferenceStore.shared.touchBarBackgroundCropY) * (1 - height)
+        return CGRect(x: x, y: y, width: width, height: height)
+    }
+
+    private func backgroundImage(from path: String) -> CGImage? {
+        guard let image = NSImage(contentsOfFile: path),
+              let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        let ciImage = CIImage(cgImage: cgImage)
+        let blur = PreferenceStore.shared.touchBarBackgroundBlurRadius
+        let output: CIImage
+        if blur > 0,
+           let blurFilter = CIFilter(name: "CIGaussianBlur"),
+           let cropFilter = CIFilter(name: "CICrop") {
+            blurFilter.setValue(ciImage, forKey: kCIInputImageKey)
+            blurFilter.setValue(blur, forKey: kCIInputRadiusKey)
+            cropFilter.setValue(blurFilter.outputImage, forKey: kCIInputImageKey)
+            cropFilter.setValue(CIVector(cgRect: ciImage.extent), forKey: "inputRectangle")
+            output = cropFilter.outputImage ?? ciImage
+        } else {
+            output = ciImage
+        }
+        guard let alphaFilter = CIFilter(name: "CIColorMatrix") else { return cgImage }
+        alphaFilter.setValue(output, forKey: kCIInputImageKey)
+        alphaFilter.setValue(CIVector(x: 0, y: 0, z: 0, w: PreferenceStore.shared.touchBarBackgroundOpacity), forKey: "inputAVector")
+        return CIContext().createCGImage(alphaFilter.outputImage ?? output, from: ciImage.extent) ?? cgImage
     }
 
     private func applyTheme(toItemView view: NSView) {

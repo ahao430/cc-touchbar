@@ -17,6 +17,12 @@ final class PreferenceStore {
         case pollIntervalSeconds = "cc.touchbar.pollInterval"
         case balanceIntervalSeconds = "cc.touchbar.balanceInterval"
         case subscriptionPercentMode = "cc.touchbar.subscriptionPercentMode"
+        case touchBarBackgroundImagePath = "cc.touchbar.backgroundImage.path"
+        case touchBarBackgroundOpacity = "cc.touchbar.backgroundImage.opacity"
+        case touchBarBackgroundBlurRadius = "cc.touchbar.backgroundImage.blurRadius"
+        case touchBarBackgroundCropX = "cc.touchbar.backgroundImage.cropX"
+        case touchBarBackgroundCropY = "cc.touchbar.backgroundImage.cropY"
+        case touchBarBackgroundCropZoom = "cc.touchbar.backgroundImage.cropZoom"
     }
 
     /// 订阅类型百分比显示口径
@@ -59,6 +65,48 @@ final class PreferenceStore {
     var themeName: String {
         get { defaults.string(forKey: Key.theme.rawValue) ?? "Classic" }
         set { defaults.set(newValue, forKey: Key.theme.rawValue) }
+    }
+
+    var touchBarBackgroundImagePath: String? {
+        get {
+            let v = defaults.string(forKey: Key.touchBarBackgroundImagePath.rawValue)
+            return (v?.isEmpty == false) ? v : nil
+        }
+        set { defaults.set(newValue, forKey: Key.touchBarBackgroundImagePath.rawValue) }
+    }
+
+    var touchBarBackgroundOpacity: Double {
+        get {
+            let v = defaults.double(forKey: Key.touchBarBackgroundOpacity.rawValue)
+            return v > 0 ? min(max(v, 0), 1) : 1
+        }
+        set { defaults.set(min(max(newValue, 0), 1), forKey: Key.touchBarBackgroundOpacity.rawValue) }
+    }
+
+    var touchBarBackgroundBlurRadius: Double {
+        get {
+            let v = defaults.double(forKey: Key.touchBarBackgroundBlurRadius.rawValue)
+            return min(max(v, 0), 30)
+        }
+        set { defaults.set(min(max(newValue, 0), 30), forKey: Key.touchBarBackgroundBlurRadius.rawValue) }
+    }
+
+    var touchBarBackgroundCropX: Double {
+        get { defaults.object(forKey: Key.touchBarBackgroundCropX.rawValue) == nil ? 0.5 : min(max(defaults.double(forKey: Key.touchBarBackgroundCropX.rawValue), 0), 1) }
+        set { defaults.set(min(max(newValue, 0), 1), forKey: Key.touchBarBackgroundCropX.rawValue) }
+    }
+
+    var touchBarBackgroundCropY: Double {
+        get { defaults.object(forKey: Key.touchBarBackgroundCropY.rawValue) == nil ? 0.5 : min(max(defaults.double(forKey: Key.touchBarBackgroundCropY.rawValue), 0), 1) }
+        set { defaults.set(min(max(newValue, 0), 1), forKey: Key.touchBarBackgroundCropY.rawValue) }
+    }
+
+    var touchBarBackgroundCropZoom: Double {
+        get {
+            let v = defaults.double(forKey: Key.touchBarBackgroundCropZoom.rawValue)
+            return v > 0 ? min(max(v, 1), 5) : 1
+        }
+        set { defaults.set(min(max(newValue, 1), 5), forKey: Key.touchBarBackgroundCropZoom.rawValue) }
     }
 
     /// Transcript + git 分支检测的轮询间隔（秒），默认 5s，范围 [0.5, 60]
